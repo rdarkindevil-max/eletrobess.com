@@ -72,7 +72,7 @@ export default function Layout({ children, currentPageName }) {
             </button>
 
             {/* LOGO (avatar topo) */}
-          <img src="/logo.png" />
+          <img src="/logo.png" alt="Eletrobess" />
           </div>
         </header>
 
