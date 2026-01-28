@@ -91,3 +91,34 @@ body {
   flex: 1;
   overflow: auto;
 }
+/* ===== LOGO FIX ===== */
+
+.brandLogo img,
+.brandLogoImg img,
+.avatarImg img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;   /* NÃO estica */
+  padding: 6px;
+}
+
+/* sidebar logo */
+.brandLogo,
+.brandLogoImg {
+  width: 48px;
+  height: 48px;
+  border-radius: 14px;
+  background: rgba(255,255,255,0.08);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* topo (avatar/logo) */
+.avatar,
+.avatarImg {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  overflow: hidden;
+}

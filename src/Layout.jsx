@@ -12,9 +12,10 @@ export default function Layout({ children, currentPageName }) {
       <aside className={"sidebar " + (sidebarOpen ? "open" : "closed")}>
         <div className="brand">
           {/* LOGO (sidebar) */}
-          <div className="brandLogoImg">
-            <img src="/logo.png" alt="Eletrobess" />
-          </div>
+         <div className="brandLogo">
+  <img src="/logo.png" />
+</div>
+
 
           <div>
             <div className="brandName">Eletrobess</div>
@@ -71,9 +72,7 @@ export default function Layout({ children, currentPageName }) {
             </button>
 
             {/* LOGO (avatar topo) */}
-            <div className="avatarImg" title="Eletrobess">
-              <img src="/logo.png" alt="Eletrobess" />
-            </div>
+          <img src="/logo.png" />
           </div>
         </header>
 
@@ -82,3 +81,4 @@ export default function Layout({ children, currentPageName }) {
     </div>
   );
 }
+
