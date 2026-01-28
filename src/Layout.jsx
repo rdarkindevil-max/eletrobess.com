@@ -78,7 +78,7 @@ export default function Layout({ children, currentPageName }) {
   style={{
     width: "10px",
     height: "10px",
-    borderRadius: "9999px",
+    borderRadius: "99px",
     objectFit: "cover",
     display: "block"
   }}
