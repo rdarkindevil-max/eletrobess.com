@@ -4,7 +4,14 @@ import "./styles.css";
 
 export default function Layout({ children, currentPageName }) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
+const { user } = useAuth();
+{user?.role === "staff" && (
+  <Link to="/clients">Clientes</Link>
+)}
 
+{user?.role === "client" && (
+  <Link to="/portal">Meu Portal</Link>
+)}
   const navItems = [{ name: "Clientes", page: "Clients", to: "/clients" }];
 
   return (
