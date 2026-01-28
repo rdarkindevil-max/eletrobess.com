@@ -76,9 +76,9 @@ export default function Layout({ children, currentPageName }) {
   src="/logo.png"
   alt="Eletrobess"
   style={{
-    width: "10px",
-    height: "10px",
-    borderRadius: "99px",
+    width: "40px",
+    height: "40px",
+    borderRadius: "9999px",
     objectFit: "cover",
     display: "block"
   }}
