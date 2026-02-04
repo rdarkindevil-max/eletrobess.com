@@ -1,35 +1,30 @@
-import React, { useEffect, useState } from "react";
-import { useNavigate, useLocation } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 
 export default function Gate() {
-  const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
-  const location = useLocation();
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let alive = true;
 
     async function run() {
       try {
-        const { data } = await supabase.auth.getSession();
+        const { data, error } = await supabase.auth.getSession();
+        if (error) throw error;
+
         const session = data?.session;
 
         if (!alive) return;
 
-        // ✅ log pra você ver o que está acontecendo
-        console.log("[GATE] session:", !!session);
-
-        if (session) {
-          // se logou, manda pro app
-          navigate("/clients", { replace: true });
-        } else {
-          // se não tem sessão, manda pro login
-          // (evita loop se já estiver no /login)
-          if (location.pathname !== "/login") {
-            navigate("/login", { replace: true });
-          }
+        if (!session) {
+          navigate("/login", { replace: true });
+          return;
         }
+
+        // ✅ Se tiver logado, manda pro painel (ex: /clients)
+        navigate("/clients", { replace: true });
       } catch (e) {
         console.error("[GATE] erro:", e);
         if (alive) navigate("/login", { replace: true });
@@ -43,11 +38,7 @@ export default function Gate() {
     return () => {
       alive = false;
     };
-  }, [navigate, location.pathname]);
+  }, [navigate]);
 
-  return (
-    <div style={{ padding: 16, fontFamily: "system-ui" }}>
-      {loading ? "Carregando sessão..." : "Redirecionando..."}
-    </div>
-  );
+  return <div style={{ padding: 24 }}>{loading ? "Carregando sessão..." : ""}</div>;
 }
