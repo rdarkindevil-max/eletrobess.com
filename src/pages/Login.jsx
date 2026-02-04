@@ -47,6 +47,7 @@ export default function Login() {
         if (error) throw error;
 
         setMsg({ type: "success", text: "✅ Logado com sucesso!" });
+        window.location.href = "/gate";
         console.log("session", data?.session);
       } else {
         const { data, error } = await supabase.auth.signUp({
@@ -75,7 +76,7 @@ export default function Login() {
       <div className="auth-card">
         <header className="auth-header">
           <div className="brand">
-            <img className="brand-logo" src="/logo.svg" alt="Eletrobess" />
+            <img className="brand-logo" src="/logo.png" alt="Eletrobess" />
             <div className="brand-text">
               <div className="brand-name">Eletrobess</div>
               <div className="brand-sub">Solar Dashboard</div>
