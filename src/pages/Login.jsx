@@ -1,34 +1,33 @@
 import React, { useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
-import HCaptcha from "@hcaptcha/react-hcaptcha";
+import ReCAPTCHA from "react-google-recaptcha";
 import "./login.css";
 
 export default function Login() {
   const [mode, setMode] = useState("login"); // "login" | "signup"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
-  // signup
   const [password2, setPassword2] = useState("");
 
-  const [captchaToken, setCaptchaToken] = useState(null);
+  const [recaptchaToken, setRecaptchaToken] = useState(null);
+
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState({ type: "", text: "" });
 
-  const siteKey = "d8765758-502c-4982-b47e-b6dc369270e4";
+  const siteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
 
   const canSubmit = useMemo(() => {
     if (!email || !password) return false;
-    if (!captchaToken) return false;
+    if (!recaptchaToken) return false;
     if (mode === "signup" && password !== password2) return false;
     return true;
-  }, [email, password, captchaToken, mode, password2]);
+  }, [email, password, recaptchaToken, mode, password2]);
 
   async function handleSubmit(e) {
     e.preventDefault();
     setMsg({ type: "", text: "" });
 
-    if (!captchaToken) {
+    if (!recaptchaToken) {
       setMsg({ type: "error", text: "Resolva o captcha primeiro." });
       return;
     }
@@ -44,18 +43,15 @@ export default function Login() {
         const { data, error } = await supabase.auth.signInWithPassword({
           email,
           password,
-          options: { captchaToken },
         });
         if (error) throw error;
 
         setMsg({ type: "success", text: "✅ Logado com sucesso!" });
-        // se quiser: window.location.href = "/gate";
         console.log("session", data?.session);
       } else {
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: { captchaToken },
         });
         if (error) throw error;
 
@@ -68,8 +64,7 @@ export default function Login() {
     } catch (err) {
       console.error(err);
       setMsg({ type: "error", text: err?.message || "Falha no processo" });
-      // se falhar, força resolver captcha de novo
-      setCaptchaToken(null);
+      setRecaptchaToken(null);
     } finally {
       setLoading(false);
     }
@@ -142,11 +137,10 @@ export default function Login() {
             )}
 
             <div className="captcha-wrap">
-              <HCaptcha
+              <ReCAPTCHA
                 sitekey={siteKey}
-                onVerify={(token) => setCaptchaToken(token)}
-                onExpire={() => setCaptchaToken(null)}
-                onError={() => setCaptchaToken(null)}
+                onChange={(token) => setRecaptchaToken(token)}
+                onExpired={() => setRecaptchaToken(null)}
               />
             </div>
 
@@ -159,7 +153,7 @@ export default function Login() {
               className="btn-secondary"
               onClick={() => {
                 setMsg({ type: "", text: "" });
-                setCaptchaToken(null);
+                setRecaptchaToken(null);
                 setMode(mode === "login" ? "signup" : "login");
               }}
               disabled={loading}
