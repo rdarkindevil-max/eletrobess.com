@@ -1,3 +1,4 @@
+import { useNavigate } from "react-router-dom";
 import React, { useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import ReCAPTCHA from "react-google-recaptcha";
@@ -15,6 +16,7 @@ export default function Login() {
   const [msg, setMsg] = useState({ type: "", text: "" });
 
   const siteKey = import.meta.env.VITE_RECAPTCHA_SITE_KEY;
+const navigate = useNavigate();
 
   const canSubmit = useMemo(() => {
     if (!email || !password) return false;
@@ -36,18 +38,25 @@ export default function Login() {
       setMsg({ type: "error", text: "As senhas não conferem." });
       return;
     }
-
+const timeout = new Promise((_, reject) =>
+  setTimeout(() => reject(new Error("Tempo esgotado no login. Tente novamente.")), 15000)
+);
     setLoading(true);
     try {
       if (mode === "login") {
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        });
-        if (error) throw error;
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error("Tempo esgotado no login. Tente novamente.")), 15000)
+  );
+
+  const { data, error } = await Promise.race([
+    supabase.auth.signInWithPassword({ email, password }),
+    timeout,
+  ]);
+
+  if (error) throw error;
 
         setMsg({ type: "success", text: "✅ Logado com sucesso!" });
-        window.location.href = "/gate";
+navigate("/gate", { replace: true });
         console.log("session", data?.session);
       } else {
         const { data, error } = await supabase.auth.signUp({
