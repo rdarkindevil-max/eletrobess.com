@@ -1,94 +1,35 @@
-import React from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { Routes, Route, Navigate } from "react-router-dom";
+import RequireAuth from "./components/RequireAuth";
+import DashboardLayout from "./layout/DashboardLayout";
 
-import Login from "./pages/Login.jsx";
-import Gate from "./pages/Gate.jsx";
-import NoAccess from "./pages/NoAccess.jsx";
-
-import ProtectedRoute from "./auth/ProtectedRoute.jsx";
-
-import Clients from "./pages/Clients.jsx";
-import Plants from "./pages/Plants.jsx";
-import Integrations from "./pages/Integrations.jsx";
-import ClientPortal from "./pages/ClientPortal.jsx";
-import Campo from "./pages/Campo.jsx";
-import Layout from "./Layout.jsx";
-
-function Page({ name, children }) {
-  return <Layout currentPageName={name}>{children}</Layout>;
-}
+import Login from "./pages/Login";
+import Dashboard from "./pages/Dashboard";
+import Clients from "./pages/Clients";
+import CampoTecnico from "./pages/CampoTecnico";
+import ClientPortal from "./pages/ClientPortal";
+import Integrations from "./pages/Integrations";
+import Plants from "./pages/Plants";
 
 export default function App() {
   return (
-    <Router>
-      <Routes>
-        {/* Public */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/gate" element={<Gate />} />
-        <Route path="/no-access" element={<NoAccess />} />
+    <Routes>
+      <Route path="/login" element={<Login />} />
 
-        {/* STAFF/ADMIN */}
-        <Route
-          path="/clients"
-          element={
-            <ProtectedRoute allow={["staff", "admin"]}>
-              <Page name="Clients">
-                <Clients />
-              </Page>
-            </ProtectedRoute>
-          }
-        />
+      <Route path="/" element={<Navigate to="/login" replace />} />
 
-        <Route
-          path="/plants"
-          element={
-            <ProtectedRoute allow={["staff", "admin"]}>
-              <Page name="Plants">
-                <Plants />
-              </Page>
-            </ProtectedRoute>
-          }
-        />
+      <Route element={<RequireAuth />}>
+        <Route element={<DashboardLayout />}>
+          <Route path="/app/dashboard" element={<Dashboard />} />
+          <Route path="/app/clients" element={<Clients />} />
+          <Route path="/app/campo-tecnico" element={<CampoTecnico />} />
+          <Route path="/app/client-portal" element={<ClientPortal />} />
+          <Route path="/app/integrations" element={<Integrations />} />
+          <Route path="/app/plants" element={<Plants />} />
+        </Route>
+      </Route>
 
-        <Route
-          path="/integrations"
-          element={
-            <ProtectedRoute allow={["staff", "admin"]}>
-              <Page name="Integrations">
-                <Integrations />
-              </Page>
-            </ProtectedRoute>
-          }
-        />
-
-        {/* CLIENT */}
-        <Route
-          path="/portal"
-          element={
-            <ProtectedRoute allow={["client"]}>
-              <Page name="Portal">
-                <ClientPortal />
-              </Page>
-            </ProtectedRoute>
-          }
-        />
-
-        {/* TECH */}
-        <Route
-          path="/campo"
-          element={
-            <ProtectedRoute allow={["technician"]}>
-              <Page name="Campo">
-                <Campo />
-              </Page>
-            </ProtectedRoute>
-          }
-        />
-
-        {/* default */}
-        <Route path="/" element={<Navigate to="/login" replace />} />
-        <Route path="*" element={<Navigate to="/login" replace />} />
-      </Routes>
-    </Router>
+      <Route path="/app/*" element={<Navigate to="/app/dashboard" replace />} />
+      <Route path="*" element={<Navigate to="/login" replace />} />
+    </Routes>
   );
 }

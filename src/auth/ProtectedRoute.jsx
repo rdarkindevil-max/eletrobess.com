@@ -1,23 +1,17 @@
 import React from "react";
-import { Navigate } from "react-router-dom";
-import { useAuth } from "./useAuth.js";
+import { Navigate, Outlet } from "react-router-dom";
+import { useAuth } from "./AuthProvider";
 
-export default function ProtectedRoute({ allow = [], children }) {
-  const { user, role, loading } = useAuth();
+export default function ProtectedRoute() {
+  const { loading, user } = useAuth();
 
   if (loading) {
-    return (
-      <div style={{ padding: 24, fontFamily: "sans-serif" }}>
-        Carregando…
-      </div>
-    );
+    return <div style={{ padding: 24 }}>Carregando...</div>;
   }
 
-  if (!user) return <Navigate to="/login" replace />;
-
-  if (allow?.length && !allow.includes(role)) {
-    return <Navigate to="/no-access" replace />;
+  if (!user) {
+    return <Navigate to="/login" replace />;
   }
 
-  return children;
+  return <Outlet />;
 }

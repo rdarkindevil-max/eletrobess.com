@@ -5,8 +5,8 @@ export default function NoAccess() {
   return (
     <div style={{ padding: 24 }}>
       <h2>Sem acesso</h2>
-      <p>Seu usuário não tem permissão para entrar nessa área.</p>
-      <Link to="/login">Voltar pro login</Link>
+      <p>Você não tem permissão para acessar esta página.</p>
+      <Link to="/login">Voltar para login</Link>
     </div>
   );
 }

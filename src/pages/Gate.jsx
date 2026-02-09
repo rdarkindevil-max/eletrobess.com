@@ -1,44 +1,52 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Navigate, Outlet } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 
 export default function Gate() {
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [authed, setAuthed] = useState(false);
 
   useEffect(() => {
-    let alive = true;
+    let mounted = true;
 
-    async function run() {
-      try {
-        const { data, error } = await supabase.auth.getSession();
-        if (error) throw error;
+    async function checkSession() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
 
-        const session = data?.session;
+      if (!mounted) return;
 
-        if (!alive) return;
-
-        if (!session) {
-          navigate("/login", { replace: true });
-          return;
-        }
-
-        // ✅ Se tiver logado, manda pro painel (ex: /clients)
-        navigate("/clients", { replace: true });
-      } catch (e) {
-        console.error("[GATE] erro:", e);
-        if (alive) navigate("/login", { replace: true });
-      } finally {
-        if (alive) setLoading(false);
-      }
+      setAuthed(!!session);
+      setLoading(false);
     }
 
-    run();
+    checkSession();
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (!mounted) return;
+      setAuthed(!!session);
+    });
 
     return () => {
-      alive = false;
+      mounted = false;
+      subscription?.unsubscribe();
     };
-  }, [navigate]);
+  }, []);
 
-  return <div style={{ padding: 24 }}>{loading ? "Carregando sessão..." : ""}</div>;
+  // ⛔ NUNCA retorna null (isso causa tela branca)
+  if (loading) {
+    return (
+      <div style={{ padding: 24, fontFamily: "system-ui" }}>
+        Verificando sessão…
+      </div>
+    );
+  }
+
+  if (!authed) {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <Outlet />;
 }

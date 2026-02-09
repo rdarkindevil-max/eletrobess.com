@@ -1,9 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import "../styles.css";
 
 function uid() {
-  return (crypto?.randomUUID?.() || String(Date.now() + Math.random()));
+  try {
+    return crypto?.randomUUID?.() || String(Date.now() + Math.random());
+  } catch {
+    return String(Date.now() + Math.random());
+  }
 }
 
 function normalizeClient(c) {
@@ -29,8 +34,18 @@ function normalizeClient(c) {
     state: safe.state ?? "",
 
     ufv_consumo_mensal: safe.ufv_consumo_mensal ?? {
-      jan: "", fev: "", mar: "", abr: "", mai: "", jun: "",
-      jul: "", ago: "", set: "", out: "", nov: "", dez: "",
+      jan: "",
+      fev: "",
+      mar: "",
+      abr: "",
+      mai: "",
+      jun: "",
+      jul: "",
+      ago: "",
+      set: "",
+      out: "",
+      nov: "",
+      dez: "",
     },
 
     ufv_potencia_kwp: safe.ufv_potencia_kwp ?? "",
@@ -40,15 +55,17 @@ function normalizeClient(c) {
     ufv_inversores: safe.ufv_inversores ?? "",
     ufv_modulos: safe.ufv_modulos ?? "",
 
-    financeiro_custos: Array.isArray(safe.financeiro_custos) ? safe.financeiro_custos : [
-      { id: uid(), tipo: "Equipamentos", valor: "" },
-      { id: uid(), tipo: "Serviços", valor: "" },
-      { id: uid(), tipo: "Engenharia", valor: "" },
-    ],
+    financeiro_custos: Array.isArray(safe.financeiro_custos)
+      ? safe.financeiro_custos
+      : [
+          { id: uid(), tipo: "Equipamentos", valor: "" },
+          { id: uid(), tipo: "Serviços", valor: "" },
+          { id: uid(), tipo: "Engenharia", valor: "" },
+        ],
 
-    financeiro_pagamentos: Array.isArray(safe.financeiro_pagamentos) ? safe.financeiro_pagamentos : [
-      { id: uid(), forma: "PIX", pct: 0 },
-    ],
+    financeiro_pagamentos: Array.isArray(safe.financeiro_pagamentos)
+      ? safe.financeiro_pagamentos
+      : [{ id: uid(), forma: "PIX", pct: 0 }],
   };
 }
 
@@ -57,8 +74,39 @@ function formatBRL(v) {
   return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
 }
 
+function getConsumoMedioCliente(c) {
+  const obj = c?.ufv_consumo_mensal || {};
+  const vals = Object.values(obj).map((v) => Number(v) || 0);
+  const anual = vals.reduce((a, b) => a + b, 0);
+  return anual > 0 ? anual / 12 : 0;
+}
+
+function getEconomiaCliente(c) {
+  const kwp = Number(c?.ufv_potencia_kwp || 0);
+  if (!kwp) return 0;
+
+  const f = Number(c.financeiro_custos?.find((x) => x.tipo === "Equipamentos")?.valor || 0);
+  const s = Number(c.financeiro_custos?.find((x) => x.tipo === "Serviços")?.valor || 0);
+  const e = Number(c.financeiro_custos?.find((x) => x.tipo === "Engenharia")?.valor || 0);
+
+  const totalPorKwp = f / kwp + s / kwp + e / kwp;
+  return totalPorKwp * kwp;
+}
+
+function sumEconomia(list) {
+  return (list || []).reduce((acc, c) => acc + getEconomiaCliente(c), 0);
+}
+
+function avgConsumo(list) {
+  const arr = (list || []).map(getConsumoMedioCliente).filter((n) => n > 0);
+  if (arr.length === 0) return 0;
+  return arr.reduce((a, b) => a + b, 0) / arr.length;
+}
+
 export default function Clients() {
-  const initialFormState = normalizeClient({ status: "ENTRADA" });
+  const navigate = useNavigate();
+
+  const initialFormState = useMemo(() => normalizeClient({ status: "ENTRADA" }), []);
 
   const [clients, setClients] = useState([]);
   const [formData, setFormData] = useState(initialFormState);
@@ -81,10 +129,7 @@ export default function Clients() {
     setErrMsg("");
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from("clients")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const { data, error } = await supabase.from("clients").select("*").order("created_at", { ascending: false });
 
     if (error) {
       setErrMsg(error.message);
@@ -98,6 +143,7 @@ export default function Clients() {
 
   useEffect(() => {
     loadClients();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // CEP
@@ -196,11 +242,7 @@ export default function Clients() {
     };
 
     if (editingClientId) {
-      const { error } = await supabase
-        .from("clients")
-        .update(payload)
-        .eq("id", editingClientId);
-
+      const { error } = await supabase.from("clients").update(payload).eq("id", editingClientId);
       if (error) {
         setErrMsg(error.message);
         alert("Erro ao atualizar: " + error.message);
@@ -208,10 +250,7 @@ export default function Clients() {
       }
       alert("Cliente atualizado!");
     } else {
-      const { error } = await supabase
-        .from("clients")
-        .insert(payload);
-
+      const { error } = await supabase.from("clients").insert(payload);
       if (error) {
         setErrMsg(error.message);
         alert("Erro ao salvar: " + error.message);
@@ -237,6 +276,11 @@ export default function Clients() {
     await loadClients();
   };
 
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
+    navigate("/login", { replace: true });
+  };
+
   const filtered = useMemo(() => {
     const qq = q.trim().toLowerCase();
     return (clients || []).filter((c) => {
@@ -254,27 +298,23 @@ export default function Clients() {
     });
   }, [clients, q, fStatus, fType, fOrigin]);
 
-  const kpis = useMemo(() => {
-    const list = filtered || [];
-    const total = list.length;
-    const entradas = list.filter((c) => (c?.status || "ENTRADA") === "ENTRADA").length;
-    const fechados = list.filter((c) => (c?.status || "") === "FECHADO").length;
-    const cancelados = list.filter((c) => (c?.status || "") === "CANCELADO").length;
-    return { total, entradas, fechados, cancelados };
-  }, [filtered]);
+  const economiaTotal = useMemo(() => sumEconomia(filtered), [filtered]);
+  const consumoMedioLista = useMemo(() => avgConsumo(filtered), [filtered]);
 
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto w-full max-w-6xl px-6 py-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        {/* Header (Base44 clean) */}
+        <div className="pageHeader2">
           <div>
-            <h1 className="text-2xl font-semibold">Clientes</h1>
-            <p className="text-sm text-muted-foreground">
-              Gerencie clientes, propostas e cadastro completo (UFV/Financeiro).
-            </p>
+            <h1 className="pageTitle2">Clientes</h1>
+            <p className="pageSubtitle2">Gerencie os clientes da Eletrobess</p>
           </div>
 
-          <div className="flex gap-2">
+          <div className="headerActions2">
+            <button className="btn ghost" type="button" onClick={handleLogout}>
+              Sair
+            </button>
             <button className="btn ghost" type="button">
               Importar Planilha
             </button>
@@ -290,141 +330,101 @@ export default function Clients() {
           </div>
         ) : null}
 
-        <div className="mt-6 rounded-2xl border bg-white p-4 shadow-sm">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="relative w-full lg:max-w-md">
-              <input
-                value={q}
-                onChange={(e) => setQ(e.target.value)}
-                placeholder="Buscar por nome, email, documento, cidade..."
-                className="input"
-              />
-            </div>
-
-            <div className="grid w-full grid-cols-2 gap-2 lg:w-auto lg:grid-cols-3">
-              <select className="input" value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
-                <option value="all">Status (todos)</option>
-                <option value="ENTRADA">ENTRADA</option>
-                <option value="FECHADO">FECHADO</option>
-                <option value="CANCELADO">CANCELADO</option>
-              </select>
-
-              <select className="input" value={fType} onChange={(e) => setFType(e.target.value)}>
-                <option value="all">Tipo (todos)</option>
-                <option value="RESIDENCIAL">RESIDENCIAL</option>
-                <option value="COMERCIAL">COMERCIAL</option>
-                <option value="INDUSTRIAL">INDUSTRIAL</option>
-                <option value="RURAL">RURAL</option>
-              </select>
-
-              <select className="input" value={fOrigin} onChange={(e) => setFOrigin(e.target.value)}>
-                <option value="all">Origem (todas)</option>
-                <option value="INDICAÇÃO">INDICAÇÃO</option>
-                <option value="TRÁFEGO">TRÁFEGO</option>
-                <option value="DIRETO">DIRETO</option>
-                <option value="OUTROS">OUTROS</option>
-              </select>
-            </div>
-          </div>
+        {/* KPIs (Base44 clean) */}
+        <div className="kpiGrid2">
+          <KpiCard icon="👥" title="Total de Clientes" value={filtered.length} />
         </div>
 
-        <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard title="Total de clientes" value={kpis.total} />
-          <StatCard title="Entradas" value={kpis.entradas} />
-          <StatCard title="Fechados" value={kpis.fechados} />
-          <StatCard title="Cancelados" value={kpis.cancelados} />
-        </div>
-
-        <div className="mt-6 overflow-hidden rounded-2xl border bg-white shadow-sm">
-          <div className="border-b px-4 py-3">
-            <div className="flex items-center justify-between">
-              <p className="text-sm font-medium">Lista</p>
-              <p className="text-xs text-muted-foreground">
-                {loading ? "Carregando..." : `${filtered.length} resultado(s)`}
-              </p>
-            </div>
+        {/* Busca + filtros (Base44 clean) */}
+        <div className="searchBar2">
+          <div className="searchInputWrap2">
+            <span className="searchIcon2">🔎</span>
+            <input
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Buscar clientes..."
+              className="searchInput2"
+            />
           </div>
 
-          <div className="w-full overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-3">Cliente</th>
-                  <th className="px-4 py-3">Tipo</th>
-                  <th className="px-4 py-3">Local</th>
-                  <th className="px-4 py-3">Categoria</th>
-                  <th className="px-4 py-3">Status</th>
-                  <th className="px-4 py-3">Total (R$)</th>
-                  <th className="px-4 py-3 text-right">Ações</th>
-                </tr>
-              </thead>
+          <select className="select2" value={fType} onChange={(e) => setFType(e.target.value)}>
+            <option value="all">Todos os tipos</option>
+            <option value="RESIDENCIAL">Residencial</option>
+            <option value="COMERCIAL">Comercial</option>
+            <option value="INDUSTRIAL">Industrial</option>
+            <option value="RURAL">Rural</option>
+          </select>
 
-              <tbody>
-                {loading ? (
-                  <tr>
-                    <td className="px-4 py-8 text-center text-muted-foreground" colSpan={7}>
-                      Carregando clientes...
-                    </td>
-                  </tr>
-                ) : filtered.length === 0 ? (
-                  <tr>
-                    <td className="px-4 py-8 text-center text-muted-foreground" colSpan={7}>
-                      Nenhum cliente encontrado.
-                    </td>
-                  </tr>
-                ) : (
-                  filtered.map((c) => {
-                    const statusTxt = c.status || "ENTRADA";
-                    const pillClass = String(statusTxt).toLowerCase();
+          <select className="select2" value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
+            <option value="all">Todos os status</option>
+            <option value="ENTRADA">Entrada</option>
+            <option value="FECHADO">Fechado</option>
+            <option value="CANCELADO">Cancelado</option>
+          </select>
+        </div>
 
-                    const totKwp = (() => {
-                      const k = Number(c.ufv_potencia_kwp || 0);
-                      const f = Number(c.financeiro_custos?.find((x) => x.tipo === "Equipamentos")?.valor || 0);
-                      const s = Number(c.financeiro_custos?.find((x) => x.tipo === "Serviços")?.valor || 0);
-                      const e = Number(c.financeiro_custos?.find((x) => x.tipo === "Engenharia")?.valor || 0);
-                      if (!k) return 0;
-                      return (f / k) + (s / k) + (e / k);
-                    })();
+        {/* Lista bonita (cards) */}
+        <div className="tableCard2">
+          <div className="tableHead2">
+            <div className="tableTitle2">Clientes</div>
+            <div className="tableMeta2">{loading ? "Carregando..." : `${filtered.length} resultado(s)`}</div>
+          </div>
 
-                    const total = totKwp * Number(c.ufv_potencia_kwp || 0);
+          <div className="p-4">
+            {loading ? (
+              <div className="empty2">Carregando clientes...</div>
+            ) : filtered.length === 0 ? (
+              <div className="empty2">Nenhum cliente encontrado.</div>
+            ) : (
+              <div className="clientsList">
+                {filtered.map((c) => {
+                  const statusTxt = c.status || "ENTRADA";
+                  const statusKey = String(statusTxt).toLowerCase();
 
-                    return (
-                      <tr key={c.id} className="border-t">
-                        <td className="px-4 py-3">
-                          <div className="font-medium">{c.name || "-"}</div>
-                          <div className="text-xs text-muted-foreground">{c.email || ""}</div>
-                        </td>
+                  const total = getEconomiaCliente(c);
+                  const consumo = getConsumoMedioCliente(c);
 
-                        <td className="px-4 py-3">{c.type || "-"}</td>
+                  return (
+                    <div key={c.id} className="clientCard2">
+                      <div className="clientTop2">
+                        <div className="clientLeft2">
+                          <div className="avatar2">{(c.name || "C")[0]?.toUpperCase()}</div>
 
-                        <td className="px-4 py-3">
-                          {c.city || "-"}{c.state ? `/${c.state}` : ""}
-                        </td>
-
-                        <td className="px-4 py-3">{c.service_category || "-"}</td>
-
-                        <td className="px-4 py-3">
-                          <span className={`pill ${pillClass}`}>{statusTxt}</span>
-                        </td>
-
-                        <td className="px-4 py-3 font-medium">{formatBRL(total)}</td>
-
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex justify-end gap-2">
-                            <button className="btn ghost" type="button" onClick={() => openEdit(c)}>
-                              Editar
-                            </button>
-                            <button className="btn danger" type="button" onClick={() => handleDelete(c.id)}>
-                              Excluir
-                            </button>
+                          <div className="clientText2">
+                            <div className="clientName2">{c.name || "-"}</div>
+                            <div className="clientEmail2">{c.email || ""}</div>
                           </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
+                        </div>
+
+                        <span className={`badge2 badge-${statusKey}`}>
+                          {statusKey === "entrada" ? "in_progress" : statusKey}
+                        </span>
+                      </div>
+
+                      <div className="clientMeta2">
+                        <div className="chip2">{c.type || "—"}</div>
+                        <div className="chip2">
+                          {c.city || "—"}
+                          {c.state ? `, ${c.state}` : ""}
+                        </div>
+                        <div className="chip2">{c.service_category || "—"}</div>
+                        <div className="chip2">{consumo ? `${consumo.toFixed(0)} kWh` : "—"}</div>
+                        <div className="clientTotal2">{total ? formatBRL(total) : "—"}</div>
+                      </div>
+
+                      <div className="clientActions2">
+                        <button className="btn ghost" type="button" onClick={() => openEdit(c)}>
+                          Editar
+                        </button>
+                        <button className="btn danger" type="button" onClick={() => handleDelete(c.id)}>
+                          Excluir
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="border-t px-4 py-3 text-xs text-muted-foreground">
@@ -432,6 +432,7 @@ export default function Clients() {
           </div>
         </div>
 
+        {/* MODAL (seu original - mantido) */}
         {isFormOpen && (
           <div style={modalOverlay}>
             <div style={modalCard}>
@@ -466,19 +467,35 @@ export default function Clients() {
                 </div>
 
                 <div className="tabs">
-                  <button type="button" className={"tab " + (activeTab === "basico" ? "active" : "")} onClick={() => setActiveTab("basico")}>
+                  <button
+                    type="button"
+                    className={"tab " + (activeTab === "basico" ? "active" : "")}
+                    onClick={() => setActiveTab("basico")}
+                  >
                     Básico
                   </button>
-                  <button type="button" className={"tab " + (activeTab === "endereco" ? "active" : "")} onClick={() => setActiveTab("endereco")}>
+                  <button
+                    type="button"
+                    className={"tab " + (activeTab === "endereco" ? "active" : "")}
+                    onClick={() => setActiveTab("endereco")}
+                  >
                     Endereço
                   </button>
                   {formData.service_category && (
-                    <button type="button" className={"tab " + (activeTab === "nicho" ? "active" : "")} onClick={() => setActiveTab("nicho")}>
+                    <button
+                      type="button"
+                      className={"tab " + (activeTab === "nicho" ? "active" : "")}
+                      onClick={() => setActiveTab("nicho")}
+                    >
                       Nicho
                     </button>
                   )}
                   {formData.service_category && (
-                    <button type="button" className={"tab " + (activeTab === "financeiro" ? "active" : "")} onClick={() => setActiveTab("financeiro")}>
+                    <button
+                      type="button"
+                      className={"tab " + (activeTab === "financeiro" ? "active" : "")}
+                      onClick={() => setActiveTab("financeiro")}
+                    >
                       Financeiro
                     </button>
                   )}
@@ -502,9 +519,18 @@ export default function Clients() {
                     <InputField label="CPF / CNPJ" value={formData.document} onChange={(v) => setField("document", v)} />
 
                     <InputField label="E-mail" value={formData.email} onChange={(v) => setField("email", v)} />
-                    <InputField label="Telefone" value={formData.contact_number} onChange={(v) => setField("contact_number", v)} />
+                    <InputField
+                      label="Telefone"
+                      value={formData.contact_number}
+                      onChange={(v) => setField("contact_number", v)}
+                    />
 
-                    <InputField label="Data de Nascimento / Fundação" type="date" value={formData.birth_date} onChange={(v) => setField("birth_date", v)} />
+                    <InputField
+                      label="Data de Nascimento / Fundação"
+                      type="date"
+                      value={formData.birth_date}
+                      onChange={(v) => setField("birth_date", v)}
+                    />
 
                     <SelectField
                       label="Tipo de Cliente"
@@ -533,7 +559,11 @@ export default function Clients() {
                     <div />
 
                     <div className="full">
-                      <InputField label="Observações" value={formData.observations} onChange={(v) => setField("observations", v)} />
+                      <InputField
+                        label="Observações"
+                        value={formData.observations}
+                        onChange={(v) => setField("observations", v)}
+                      />
                     </div>
 
                     <SelectField
@@ -566,8 +596,16 @@ export default function Clients() {
                       }}
                     />
                     <InputField label="Endereço" value={formData.address} onChange={(v) => setField("address", v)} />
-                    <InputField label="Número" value={formData.house_number} onChange={(v) => setField("house_number", v)} />
-                    <InputField label="Bairro" value={formData.neighborhood} onChange={(v) => setField("neighborhood", v)} />
+                    <InputField
+                      label="Número"
+                      value={formData.house_number}
+                      onChange={(v) => setField("house_number", v)}
+                    />
+                    <InputField
+                      label="Bairro"
+                      value={formData.neighborhood}
+                      onChange={(v) => setField("neighborhood", v)}
+                    />
                     <InputField label="Cidade" value={formData.city} onChange={(v) => setField("city", v)} />
                     <InputField label="Estado" value={formData.state} onChange={(v) => setField("state", v)} />
                   </div>
@@ -577,8 +615,18 @@ export default function Clients() {
                   <div className="grid2">
                     {formData.service_category === "UFV" ? (
                       <>
-                        <InputField label="Potência do Sistema (kWp)" type="number" value={formData.ufv_potencia_kwp} onChange={(v) => setField("ufv_potencia_kwp", v)} />
-                        <InputField label="Irradiação (kWh/m²/dia)" type="number" value={formData.ufv_irradiacao} onChange={(v) => setField("ufv_irradiacao", v)} />
+                        <InputField
+                          label="Potência do Sistema (kWp)"
+                          type="number"
+                          value={formData.ufv_potencia_kwp}
+                          onChange={(v) => setField("ufv_potencia_kwp", v)}
+                        />
+                        <InputField
+                          label="Irradiação (kWh/m²/dia)"
+                          type="number"
+                          value={formData.ufv_irradiacao}
+                          onChange={(v) => setField("ufv_irradiacao", v)}
+                        />
 
                         <SelectField
                           label="Tipos de Telhado"
@@ -668,7 +716,12 @@ export default function Clients() {
                           <button
                             className="btn danger"
                             type="button"
-                            onClick={() => setFormData((p) => ({ ...p, financeiro_custos: p.financeiro_custos.filter((it) => it.id !== c.id) }))}
+                            onClick={() =>
+                              setFormData((p) => ({
+                                ...p,
+                                financeiro_custos: p.financeiro_custos.filter((it) => it.id !== c.id),
+                              }))
+                            }
                           >
                             X
                           </button>
@@ -691,21 +744,33 @@ export default function Clients() {
                       <div className="hr" />
 
                       <div className="kpis">
-                        <div><b>Fornecedor por kWp:</b> R$ {fornecedorPorKwp.toFixed(2)}</div>
-                        <div><b>Serviço por kWp:</b> R$ {servicoPorKwp.toFixed(2)}</div>
-                        <div><b>Engenharia por kWp:</b> R$ {engenhariaPorKwp.toFixed(2)}</div>
+                        <div>
+                          <b>Fornecedor por kWp:</b> R$ {fornecedorPorKwp.toFixed(2)}
+                        </div>
+                        <div>
+                          <b>Serviço por kWp:</b> R$ {servicoPorKwp.toFixed(2)}
+                        </div>
+                        <div>
+                          <b>Engenharia por kWp:</b> R$ {engenhariaPorKwp.toFixed(2)}
+                        </div>
                       </div>
 
                       <div className="kpiBig">
-                        <div><b>Total por kWp (depois da divisão):</b> R$ {totalPorKwp.toFixed(2)}</div>
+                        <div>
+                          <b>Total por kWp (depois da divisão):</b> R$ {totalPorKwp.toFixed(2)}
+                        </div>
                         <div className="muted">Total em R$ (Total por kWp × kWp): R$ {totalEmReais.toFixed(2)}</div>
                       </div>
                     </Section>
 
                     <Section title="Formas de Pagamento (por % — sem parcelas)">
                       <div className="between small">
-                        <span>Total: <b>{totalPct}%</b></span>
-                        <span>Restante: <b>{pctRestante}%</b></span>
+                        <span>
+                          Total: <b>{totalPct}%</b>
+                        </span>
+                        <span>
+                          Restante: <b>{pctRestante}%</b>
+                        </span>
                       </div>
 
                       {pagamentosCalculados.map((p) => (
@@ -753,7 +818,12 @@ export default function Clients() {
                               <button
                                 className="btn danger"
                                 type="button"
-                                onClick={() => setFormData((prev) => ({ ...prev, financeiro_pagamentos: pagamentos.filter((x) => x.id !== p.id) }))}
+                                onClick={() =>
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    financeiro_pagamentos: pagamentos.filter((x) => x.id !== p.id),
+                                  }))
+                                }
                               >
                                 X
                               </button>
@@ -809,11 +879,14 @@ export default function Clients() {
   );
 }
 
-function StatCard({ title, value }) {
+function KpiCard({ icon, title, value }) {
   return (
-    <div className="rounded-2xl border bg-white p-4 shadow-sm">
-      <p className="text-sm text-muted-foreground">{title}</p>
-      <div className="mt-2 text-2xl font-semibold">{value}</div>
+    <div className="kpiCard2">
+      <div className="kpiIcon2">{icon}</div>
+      <div>
+        <div className="kpiLabel2">{title}</div>
+        <div className="kpiValue2">{value}</div>
+      </div>
     </div>
   );
 }
@@ -878,6 +951,3 @@ const modalCard = {
   overflow: "auto",
   background: "transparent",
 };
-import HCaptcha from "@hcaptcha/react-hcaptcha";
-
-
