@@ -1,5 +1,5 @@
-oracleJdk-25/
-src/oracleJdk-25/
-node_modules/
+dist
+dist/
+node_modules
 .env
 .env.*
