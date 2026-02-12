@@ -17,19 +17,10 @@ export default function Login() {
 
   // Turnstile
   const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
-  const isProd = import.meta.env.PROD;
-
-  // se quiser ver no localhost também, troca pra: true
-  const shouldShowCaptcha = true; // ou: isProd
-console.log("=== TURNSTILE DEBUG ===");
-console.log("SITE KEY:", siteKey);
-console.log("IS PROD:", isProd);
-console.log("SHOULD SHOW CAPTCHA:", shouldShowCaptcha);
-console.log("=======================");
+  const shouldShowCaptcha = true; // deixa true pra testar local e prod (depois você troca se quiser)
 
   const [captchaToken, setCaptchaToken] = useState("");
   const [captchaError, setCaptchaError] = useState("");
-  const [captchaKey, setCaptchaKey] = useState(0); // pra forçar reset do widget
 
   const canSubmit = useMemo(() => {
     if (!email || !password) return false;
@@ -50,7 +41,7 @@ console.log("=======================");
     if (shouldShowCaptcha && !siteKey) {
       setMsg({
         type: "error",
-        text: "Faltou VITE_TURNSTILE_SITE_KEY no .env / Vercel.",
+        text: "Faltou VITE_TURNSTILE_SITE_KEY no .env/.env.local/Vercel.",
       });
       return;
     }
@@ -63,23 +54,23 @@ console.log("=======================");
     setLoading(true);
 
     try {
-      // debug rápido (depois remove)
-      // console.log("captchaToken len:", captchaToken?.length);
-
-      const payloadBase = {
-        email,
-        password,
-        ...(shouldShowCaptcha ? { options: { captchaToken } } : {}),
-      };
+      const payload =
+        mode === "login"
+          ? {
+              email,
+              password,
+              options: shouldShowCaptcha ? { captchaToken } : undefined,
+            }
+          : {
+              email,
+              password,
+              options: shouldShowCaptcha ? { captchaToken } : undefined,
+            };
 
       const { data, error } =
         mode === "login"
-          ? await supabase.auth.signInWithPassword(payloadBase)
-          : await supabase.auth.signUp({
-              ...payloadBase,
-              // se quiser, pode setar redirectTo aqui
-              // options: { ...payloadBase.options, emailRedirectTo: `${window.location.origin}/login` }
-            });
+          ? await supabase.auth.signInWithPassword(payload)
+          : await supabase.auth.signUp(payload);
 
       if (error) throw error;
 
@@ -88,7 +79,7 @@ console.log("=======================");
 
       if (!session) {
         throw new Error(
-          "Login ok, mas sessão não apareceu (confere Supabase Auth / e-mail confirmation)."
+          "Login ok, mas sessão não apareceu (confere Supabase Auth / confirmação de e-mail)."
         );
       }
 
@@ -104,12 +95,8 @@ console.log("=======================");
         text: err?.message || "Falha no processo de autenticação.",
       });
 
-      // se falhar, reseta captcha pra obrigar resolver de novo
-      if (shouldShowCaptcha) {
-        setCaptchaToken("");
-        setCaptchaError("");
-        setCaptchaKey((k) => k + 1);
-      }
+      // obriga resolver de novo
+      if (shouldShowCaptcha) setCaptchaToken("");
     } finally {
       setLoading(false);
     }
@@ -145,27 +132,16 @@ console.log("=======================");
 
             <div className="field">
               <label>Senha</label>
-              <input
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                type="password"
-                required
-              />
+              <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" required />
             </div>
 
             {mode === "signup" && (
               <div className="field">
                 <label>Confirmar senha</label>
-                <input
-                  value={password2}
-                  onChange={(e) => setPassword2(e.target.value)}
-                  type="password"
-                  required
-                />
+                <input value={password2} onChange={(e) => setPassword2(e.target.value)} type="password" required />
               </div>
             )}
 
-            {/* CAPTCHA */}
             {shouldShowCaptcha && (
               <div className="field" style={{ marginTop: 10 }}>
                 {!siteKey ? (
@@ -175,7 +151,6 @@ console.log("=======================");
                 ) : (
                   <>
                     <Turnstile
-                      key={captchaKey}
                       siteKey={siteKey}
                       options={{ theme: "auto" }}
                       onSuccess={(token) => {
@@ -210,8 +185,6 @@ console.log("=======================");
               onClick={() => {
                 setMsg({ type: "", text: "" });
                 setCaptchaToken("");
-                setCaptchaError("");
-                setCaptchaKey((k) => k + 1);
                 setMode(mode === "login" ? "signup" : "login");
               }}
             >
