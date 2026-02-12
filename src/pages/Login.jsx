@@ -16,8 +16,8 @@ export default function Login() {
   const [msg, setMsg] = useState({ type: "", text: "" });
 
   // Turnstile
-  const siteKey = import.meta.env.VITE_TURNSTILE_SITE_KEY;
-  const shouldShowCaptcha = true; // deixa true pra testar local e prod (depois você troca se quiser)
+  const siteKey = (import.meta.env.VITE_TURNSTILE_SITE_KEY || "").trim();
+  const shouldShowCaptcha = true; // deixa true pra testar; se quiser só prod: import.meta.env.PROD
 
   const [captchaToken, setCaptchaToken] = useState("");
   const [captchaError, setCaptchaError] = useState("");
@@ -41,7 +41,7 @@ export default function Login() {
     if (shouldShowCaptcha && !siteKey) {
       setMsg({
         type: "error",
-        text: "Faltou VITE_TURNSTILE_SITE_KEY no .env/.env.local/Vercel.",
+        text: "Faltou VITE_TURNSTILE_SITE_KEY (na Vercel/ENV).",
       });
       return;
     }
@@ -54,18 +54,11 @@ export default function Login() {
     setLoading(true);
 
     try {
-      const payload =
-        mode === "login"
-          ? {
-              email,
-              password,
-              options: shouldShowCaptcha ? { captchaToken } : undefined,
-            }
-          : {
-              email,
-              password,
-              options: shouldShowCaptcha ? { captchaToken } : undefined,
-            };
+      const payload = {
+        email,
+        password,
+        options: shouldShowCaptcha ? { captchaToken } : undefined,
+      };
 
       const { data, error } =
         mode === "login"
@@ -79,7 +72,7 @@ export default function Login() {
 
       if (!session) {
         throw new Error(
-          "Login ok, mas sessão não apareceu (confere Supabase Auth / confirmação de e-mail)."
+          "Login ok, mas sessão não apareceu (confere Supabase Auth / e-mail confirmation)."
         );
       }
 
@@ -95,7 +88,7 @@ export default function Login() {
         text: err?.message || "Falha no processo de autenticação.",
       });
 
-      // obriga resolver de novo
+      // reseta token e força refazer captcha
       if (shouldShowCaptcha) setCaptchaToken("");
     } finally {
       setLoading(false);
@@ -127,18 +120,33 @@ export default function Login() {
           <form onSubmit={handleSubmit} className="form">
             <div className="field">
               <label>E-mail</label>
-              <input value={email} onChange={(e) => setEmail(e.target.value)} type="email" required />
+              <input
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                type="email"
+                required
+              />
             </div>
 
             <div className="field">
               <label>Senha</label>
-              <input value={password} onChange={(e) => setPassword(e.target.value)} type="password" required />
+              <input
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                type="password"
+                required
+              />
             </div>
 
             {mode === "signup" && (
               <div className="field">
                 <label>Confirmar senha</label>
-                <input value={password2} onChange={(e) => setPassword2(e.target.value)} type="password" required />
+                <input
+                  value={password2}
+                  onChange={(e) => setPassword2(e.target.value)}
+                  type="password"
+                  required
+                />
               </div>
             )}
 
@@ -151,6 +159,7 @@ export default function Login() {
                 ) : (
                   <>
                     <Turnstile
+                      key={siteKey} // importante: troca a key => força re-render
                       siteKey={siteKey}
                       options={{ theme: "auto" }}
                       onSuccess={(token) => {
@@ -163,7 +172,6 @@ export default function Login() {
                         setCaptchaError("Erro ao carregar o CAPTCHA.");
                       }}
                     />
-
                     {captchaError && (
                       <div className="alert alert-error" style={{ marginTop: 8 }}>
                         {captchaError}
