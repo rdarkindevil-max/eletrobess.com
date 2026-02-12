@@ -112,7 +112,6 @@ export default function Login() {
       const session =
         data?.session ?? (await supabase.auth.getSession()).data?.session;
 
-      // Se signup exige confirmação de e-mail, pode vir sem sessão
       if (!session) {
         setMsg({
           type: "success",
@@ -145,19 +144,24 @@ export default function Login() {
   async function handleForgotPassword() {
     setMsg({ type: "", text: "" });
 
-    if (!email) {
-      setMsg({
-        type: "error",
-        text: "Digite seu e-mail acima para recuperar a senha.",
-      });
+    const cleanEmail = (email || "").trim();
+
+    // valida e-mail simples
+    if (!cleanEmail) {
+      setMsg({ type: "error", text: "Digite seu e-mail acima para recuperar a senha." });
+      return;
+    }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+      setMsg({ type: "error", text: "E-mail inválido. Confere e tenta de novo." });
       return;
     }
 
     setLoading(true);
     try {
-      const redirectTo = `${window.location.origin}/reset-password`;
+      // FIXO no domínio real (evita pegar preview/localhost)
+      const redirectTo = "https://eletrobess.com/reset-password";
 
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
         redirectTo,
       });
 
@@ -165,7 +169,7 @@ export default function Login() {
 
       setMsg({
         type: "success",
-        text: "✅ Te enviei um e-mail com o link para redefinir a senha.",
+        text: "✅ E-mail enviado! Abre sua caixa de entrada e clica no link para redefinir a senha.",
       });
     } catch (err) {
       setMsg({
@@ -277,9 +281,7 @@ export default function Login() {
                     opacity: 0.95,
                   }}
                 >
-                  <div>
-                    <b>Requisitos da senha:</b>
-                  </div>
+                  <div><b>Requisitos da senha:</b></div>
                   <div>• Mínimo {MIN_PASSWORD_LEN} caracteres</div>
                   <div>• 1 minúscula, 1 maiúscula, 1 número e 1 símbolo</div>
 
@@ -362,22 +364,35 @@ export default function Login() {
               </div>
             )}
 
+            {/* Esqueci minha senha (só no login) */}
             {mode === "login" && (
               <button
                 type="button"
                 disabled={loading}
                 onClick={handleForgotPassword}
+                onMouseEnter={(e) => {
+                  if (loading) return;
+                  e.currentTarget.style.opacity = "1";
+                  e.currentTarget.style.textDecoration = "underline";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.opacity = "0.95";
+                  e.currentTarget.style.textDecoration = "none";
+                }}
                 style={{
                   marginTop: 10,
                   background: "transparent",
                   border: 0,
                   padding: 0,
-                  cursor: "pointer",
+                  cursor: loading ? "not-allowed" : "pointer",
                   textAlign: "left",
                   fontSize: 13,
                   color: "#ffffff",
                   opacity: 0.95,
-                  fontWeight: 500,
+                  fontWeight: 600,
+                  transition: "opacity 150ms ease, text-decoration 150ms ease",
+                  width: "fit-content",
+                  alignSelf: "flex-start",
                 }}
               >
                 Esqueci minha senha
