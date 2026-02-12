@@ -30,7 +30,8 @@ export default function Login() {
 
   function getPasswordIssues(pw) {
     const issues = [];
-    if ((pw || "").length < MIN_PASSWORD_LEN) issues.push(`mínimo ${MIN_PASSWORD_LEN} caracteres`);
+    if ((pw || "").length < MIN_PASSWORD_LEN)
+      issues.push(`mínimo ${MIN_PASSWORD_LEN} caracteres`);
     if (!/[a-z]/.test(pw || "")) issues.push("1 letra minúscula");
     if (!/[A-Z]/.test(pw || "")) issues.push("1 letra maiúscula");
     if (!/[0-9]/.test(pw || "")) issues.push("1 número");
@@ -54,7 +55,15 @@ export default function Login() {
     if (shouldShowCaptcha && !captchaToken) return false;
 
     return true;
-  }, [email, password, mode, password2, passwordIssues.length, shouldShowCaptcha, captchaToken]);
+  }, [
+    email,
+    password,
+    mode,
+    password2,
+    passwordIssues.length,
+    shouldShowCaptcha,
+    captchaToken,
+  ]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -137,13 +146,15 @@ export default function Login() {
     setMsg({ type: "", text: "" });
 
     if (!email) {
-      setMsg({ type: "error", text: "Digite seu e-mail acima para recuperar a senha." });
+      setMsg({
+        type: "error",
+        text: "Digite seu e-mail acima para recuperar a senha.",
+      });
       return;
     }
 
     setLoading(true);
     try {
-      // Ajusta aqui pra tua rota/tela de reset (você vai criar)
       const redirectTo = `${window.location.origin}/reset-password`;
 
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
@@ -224,7 +235,6 @@ export default function Login() {
             <div className="field">
               <label>Senha</label>
 
-              {/* wrapper simples sem mexer no teu CSS: inline */}
               <div style={{ position: "relative" }}>
                 <input
                   value={password}
@@ -249,22 +259,32 @@ export default function Login() {
                     cursor: "pointer",
                     fontSize: 16,
                     padding: 6,
-                    opacity: 0.9,
+                    color: "#ffffff",
+                    opacity: 0.95,
                   }}
                 >
                   <EyeIcon open={showPassword} />
                 </button>
               </div>
 
-              {/* Regras no signup */}
               {mode === "signup" && (
-                <div style={{ marginTop: 8, fontSize: 12, opacity: 0.9, lineHeight: 1.4 }}>
-                  <div><b>Requisitos da senha:</b></div>
+                <div
+                  style={{
+                    marginTop: 8,
+                    fontSize: 12,
+                    lineHeight: 1.4,
+                    color: "#fff",
+                    opacity: 0.95,
+                  }}
+                >
+                  <div>
+                    <b>Requisitos da senha:</b>
+                  </div>
                   <div>• Mínimo {MIN_PASSWORD_LEN} caracteres</div>
                   <div>• 1 minúscula, 1 maiúscula, 1 número e 1 símbolo</div>
 
                   {password.length > 0 && passwordIssues.length > 0 && (
-                    <div style={{ marginTop: 6 }}>
+                    <div style={{ marginTop: 6, color: "#ffb3b3" }}>
                       <b>Falta:</b> {passwordIssues.join(", ")}.
                     </div>
                   )}
@@ -300,7 +320,8 @@ export default function Login() {
                       cursor: "pointer",
                       fontSize: 16,
                       padding: 6,
-                      opacity: 0.9,
+                      color: "#ffffff",
+                      opacity: 0.95,
                     }}
                   >
                     <EyeIcon open={showPassword2} />
@@ -341,7 +362,6 @@ export default function Login() {
               </div>
             )}
 
-            {/* Esqueci minha senha (só no login) */}
             {mode === "login" && (
               <button
                 type="button"
@@ -354,8 +374,10 @@ export default function Login() {
                   padding: 0,
                   cursor: "pointer",
                   textAlign: "left",
-                  opacity: 0.9,
                   fontSize: 13,
+                  color: "#ffffff",
+                  opacity: 0.95,
+                  fontWeight: 500,
                 }}
               >
                 Esqueci minha senha
@@ -392,7 +414,6 @@ export default function Login() {
         </div>
       </div>
 
-      {/* animação do spinner */}
       <style>{`
         @keyframes spin { to { transform: rotate(360deg); } }
       `}</style>
