@@ -3,6 +3,7 @@ import RequireAuth from "./components/RequireAuth";
 import DashboardLayout from "./layout/DashboardLayout";
 
 import Login from "./pages/Login";
+import ResetPassword from "./pages/ResetPassword"; // ✅ add
 import Dashboard from "./pages/Dashboard";
 import Clients from "./pages/Clients";
 import CampoTecnico from "./pages/CampoTecnico";
@@ -14,6 +15,7 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/reset-password" element={<ResetPassword />} /> {/* ✅ add */}
       <Route path="/" element={<Navigate to="/login" replace />} />
 
       <Route element={<RequireAuth />}>

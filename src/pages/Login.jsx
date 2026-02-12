@@ -30,12 +30,12 @@ export default function Login() {
 
   function getPasswordIssues(pw) {
     const issues = [];
-    if ((pw || "").length < MIN_PASSWORD_LEN)
-      issues.push(`mínimo ${MIN_PASSWORD_LEN} caracteres`);
-    if (!/[a-z]/.test(pw || "")) issues.push("1 letra minúscula");
-    if (!/[A-Z]/.test(pw || "")) issues.push("1 letra maiúscula");
-    if (!/[0-9]/.test(pw || "")) issues.push("1 número");
-    if (!/[^A-Za-z0-9]/.test(pw || "")) issues.push("1 símbolo");
+    const v = pw || "";
+    if (v.length < MIN_PASSWORD_LEN) issues.push(`mínimo ${MIN_PASSWORD_LEN} caracteres`);
+    if (!/[a-z]/.test(v)) issues.push("1 letra minúscula");
+    if (!/[A-Z]/.test(v)) issues.push("1 letra maiúscula");
+    if (!/[0-9]/.test(v)) issues.push("1 número");
+    if (!/[^A-Za-z0-9]/.test(v)) issues.push("1 símbolo");
     return issues;
   }
 
@@ -55,15 +55,7 @@ export default function Login() {
     if (shouldShowCaptcha && !captchaToken) return false;
 
     return true;
-  }, [
-    email,
-    password,
-    mode,
-    password2,
-    passwordIssues.length,
-    shouldShowCaptcha,
-    captchaToken,
-  ]);
+  }, [email, password, mode, password2, passwordIssues, shouldShowCaptcha, captchaToken]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -96,8 +88,11 @@ export default function Login() {
     setLoading(true);
 
     try {
+      const cleanEmail = (email || "").trim();
+
+      // ✅ Supabase v2: captchaToken vai dentro de options
       const payload = {
-        email,
+        email: cleanEmail,
         password,
         options: shouldShowCaptcha ? { captchaToken } : undefined,
       };
@@ -112,6 +107,7 @@ export default function Login() {
       const session =
         data?.session ?? (await supabase.auth.getSession()).data?.session;
 
+      // Se signup exige confirmação de e-mail, pode vir sem sessão
       if (!session) {
         setMsg({
           type: "success",
@@ -120,6 +116,7 @@ export default function Login() {
               ? "✅ Conta criada! Verifique seu e-mail para confirmar o cadastro."
               : "✅ Logado com sucesso!",
         });
+        if (shouldShowCaptcha) setCaptchaToken("");
         return;
       }
 
@@ -146,7 +143,6 @@ export default function Login() {
 
     const cleanEmail = (email || "").trim();
 
-    // valida e-mail simples
     if (!cleanEmail) {
       setMsg({ type: "error", text: "Digite seu e-mail acima para recuperar a senha." });
       return;
@@ -156,13 +152,26 @@ export default function Login() {
       return;
     }
 
+    // ✅ se captcha tá ligado no Supabase, recovery também precisa token
+    if (shouldShowCaptcha && !captchaToken) {
+      setMsg({ type: "error", text: "Confirma o CAPTCHA antes de recuperar a senha." });
+      return;
+    }
+
     setLoading(true);
+
     try {
-      // FIXO no domínio real (evita pegar preview/localhost)
-      const redirectTo = "https://eletrobess.com/reset-password";
+      // ✅ redirect correto (domínio atual em prod / eletrobess.com no localhost)
+      const base =
+        window.location.hostname === "localhost"
+          ? "https://eletrobess.com"
+          : `${window.location.protocol}//${window.location.host}`;
+
+      const redirectTo = `${base}/reset-password`;
 
       const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
         redirectTo,
+        ...(shouldShowCaptcha ? { captchaToken } : {}),
       });
 
       if (error) throw error;
@@ -171,11 +180,14 @@ export default function Login() {
         type: "success",
         text: "✅ E-mail enviado! Abre sua caixa de entrada e clica no link para redefinir a senha.",
       });
+
+      if (shouldShowCaptcha) setCaptchaToken("");
     } catch (err) {
       setMsg({
         type: "error",
         text: err?.message || "Não foi possível enviar o e-mail de recuperação.",
       });
+      if (shouldShowCaptcha) setCaptchaToken("");
     } finally {
       setLoading(false);
     }
@@ -341,7 +353,7 @@ export default function Login() {
                 ) : (
                   <>
                     <Turnstile
-                      key={siteKey}
+                      key={`${siteKey}-${mode}`} // força recarregar quando trocar login/signup
                       siteKey={siteKey}
                       options={{ theme: "auto" }}
                       onSuccess={(token) => {
@@ -364,21 +376,11 @@ export default function Login() {
               </div>
             )}
 
-            {/* Esqueci minha senha (só no login) */}
             {mode === "login" && (
               <button
                 type="button"
                 disabled={loading}
                 onClick={handleForgotPassword}
-                onMouseEnter={(e) => {
-                  if (loading) return;
-                  e.currentTarget.style.opacity = "1";
-                  e.currentTarget.style.textDecoration = "underline";
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.opacity = "0.95";
-                  e.currentTarget.style.textDecoration = "none";
-                }}
                 style={{
                   marginTop: 10,
                   background: "transparent",
@@ -390,7 +392,6 @@ export default function Login() {
                   color: "#ffffff",
                   opacity: 0.95,
                   fontWeight: 600,
-                  transition: "opacity 150ms ease, text-decoration 150ms ease",
                   width: "fit-content",
                   alignSelf: "flex-start",
                 }}
@@ -418,8 +419,11 @@ export default function Login() {
               onClick={() => {
                 setMsg({ type: "", text: "" });
                 setCaptchaToken("");
+                setCaptchaError("");
                 setPassword("");
                 setPassword2("");
+                setShowPassword(false);
+                setShowPassword2(false);
                 setMode(mode === "login" ? "signup" : "login");
               }}
             >
