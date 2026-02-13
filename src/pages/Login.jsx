@@ -57,6 +57,31 @@ export default function Login() {
     return true;
   }, [email, password, mode, password2, passwordIssues, shouldShowCaptcha, captchaToken]);
 
+  // ✅ helper: lê role do profiles
+  async function getMyRole() {
+    const { data: auth } = await supabase.auth.getUser();
+    const user = auth?.user;
+    if (!user) return "client";
+
+    const { data, error } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    if (error) return "client";
+    return data?.role || "client";
+  }
+
+  // ✅ helper: aceita convite (promove staff/admin) se existir
+  async function acceptInviteIfAny() {
+    try {
+      await supabase.rpc("accept_employee_invite_if_exists");
+    } catch {
+      // se der erro, só ignora (não quebra login)
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setMsg({ type: "", text: "" });
@@ -120,12 +145,23 @@ export default function Login() {
         return;
       }
 
+      // ✅ 1) aceita convite automaticamente (se existir)
+      await acceptInviteIfAny();
+
+      // ✅ 2) pega role atualizado
+      const role = await getMyRole();
+
       setMsg({
         type: "success",
         text: mode === "login" ? "✅ Logado com sucesso!" : "✅ Conta criada!",
       });
 
-      navigate("/app/dashboard", { replace: true });
+      // ✅ 3) redireciona baseado no role
+      if (role === "staff" || role === "admin") {
+        navigate("/app/dashboard", { replace: true });
+      } else {
+        navigate("/app/client-portal", { replace: true });
+      }
     } catch (err) {
       setMsg({
         type: "error",
@@ -353,7 +389,7 @@ export default function Login() {
                 ) : (
                   <>
                     <Turnstile
-                      key={`${siteKey}-${mode}`} // força recarregar quando trocar login/signup
+                      key={`${siteKey}-${mode}`}
                       siteKey={siteKey}
                       options={{ theme: "auto" }}
                       onSuccess={(token) => {

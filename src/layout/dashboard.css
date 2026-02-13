@@ -4,7 +4,7 @@
   --card: #ffffff;
   --card2: #ffffff;
   --line: rgba(15, 23, 42, .10);     /* linha/contorno no claro */
-  --text: #0f172a;                   /* texto no claro */
+  --text: #000000;                   /* texto no claro */
   --muted: rgba(15, 23, 42, .60);
   --accent: #16a34a;
 
@@ -12,8 +12,8 @@
   --side-bg: #0b2231;
   --side-bg2: #071824;
   --side-line: rgba(255,255,255,.10);
-  --side-text: #eaf2ff;
-  --side-muted: rgba(234,242,255,.70);
+  --side-text: #070707;
+  --side-muted: rgba(3, 3, 3, 0.7);
   --side-chip: rgba(255,255,255,.06);
 }
 

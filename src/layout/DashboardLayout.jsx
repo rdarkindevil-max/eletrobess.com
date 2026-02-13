@@ -1,33 +1,101 @@
 // src/layout/DashboardLayout.jsx
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
 import "./dashboard.css";
-
-const NAV = [
-  {
-    group: "Geral",
-    items: [
-      { to: "/app/dashboard", label: "Visão Geral", icon: "▦" },
-      { to: "/app/clients", label: "Clientes", icon: "👥" },
-    ],
-  },
-  {
-    group: "Operação",
-    items: [
-      { to: "/app/integrations", label: "Integrações (APIs)", icon: "🔗" },
-      { to: "/app/plants", label: "Usinas", icon: "⚡" },
-      { to: "/app/campo-tecnico", label: "Campo (Técnico)", icon: "🛠" },
-      { to: "/app/client-portal", label: "Portal do Cliente", icon: "👤" },
-    ],
-  },
-];
-
 
 export default function DashboardLayout() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [menuOpen, setMenuOpen] = useState(true);
+
+  const [role, setRole] = useState("client");
+  const [loadingRole, setLoadingRole] = useState(true);
+
+  // ✅ Carrega role do usuário (profiles.role)
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      setLoadingRole(true);
+
+      const { data: auth } = await supabase.auth.getUser();
+      const user = auth?.user;
+
+      if (!user) {
+        if (alive) {
+          setRole("client");
+          setLoadingRole(false);
+        }
+        return;
+      }
+
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("role")
+        .eq("id", user.id)
+        .single();
+
+      if (!alive) return;
+
+      setRole(error ? "client" : (data?.role || "client"));
+      setLoadingRole(false);
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const isClient = role === "client";
+  const isStaff = role === "staff" || role === "admin";
+  const isAdmin = role === "admin";
+
+  // ✅ NAV baseado no role
+  const NAV = useMemo(() => {
+    // cliente: só portal
+    if (isClient) {
+      return [
+        {
+          group: "Cliente",
+          items: [{ to: "/app/client-portal", label: "Portal do Cliente", icon: "👤" }],
+        },
+      ];
+    }
+
+    // staff/admin
+    const base = [
+      {
+        group: "Geral",
+        items: [
+          { to: "/app/dashboard", label: "Visão Geral", icon: "▦" },
+          { to: "/app/clients", label: "Clientes", icon: "👥" },
+        ],
+      },
+      {
+        group: "Operação",
+        items: [
+          { to: "/app/plants", label: "Usinas", icon: "⚡" },
+          { to: "/app/campo-tecnico", label: "Campo (Técnico)", icon: "🛠" },
+          { to: "/app/client-portal", label: "Portal do Cliente", icon: "👤" },
+          { to: "/app/employee-invites", label: "Convites (Funcionários)", icon: "📨" }, // ✅ NOVO
+        ],
+      },
+    ];
+
+    // admin extra
+    if (isAdmin) {
+      base.splice(1, 0, {
+        group: "Admin",
+        items: [
+          { to: "/app/employees", label: "Funcionários", icon: "🧑‍💼" },
+          { to: "/app/integrations", label: "Integrações (APIs)", icon: "🔗" },
+        ],
+      });
+    }
+
+    return base;
+  }, [isClient, isAdmin]);
 
   const filteredNav = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -37,11 +105,24 @@ export default function DashboardLayout() {
       ...g,
       items: g.items.filter((i) => i.label.toLowerCase().includes(q)),
     })).filter((g) => g.items.length > 0);
-  }, [search]);
+  }, [search, NAV]);
 
   async function logout() {
     await supabase.auth.signOut();
     navigate("/login", { replace: true });
+  }
+
+  // ✅ Enquanto carrega role, mostra sidebar "neutra" (ou só portal)
+  if (loadingRole) {
+    return (
+      <div className="dash-root">
+        <main className="dash-main">
+          <div className="flex items-center justify-center h-96">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-emerald-600" />
+          </div>
+        </main>
+      </div>
+    );
   }
 
   return (
@@ -91,8 +172,12 @@ export default function DashboardLayout() {
           <div className="dash-statusCard">
             <div className="dash-statusIcon">⚡</div>
             <div>
-              <div className="dash-statusTitle">Sistema online</div>
-              <div className="dash-statusValue">100% operacional</div>
+              <div className="dash-statusTitle">
+                {isClient ? "Área do Cliente" : "Sistema online"}
+              </div>
+              <div className="dash-statusValue">
+                {isClient ? "Acesso restrito ao portal" : "100% operacional"}
+              </div>
             </div>
           </div>
         </div>

@@ -1,14 +1,8 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "../lib/supabaseClient";
 
-import {
-  Zap,
-  AlertCircle,
-  CheckCircle2,
-  Activity,
-  FileText,
-} from "lucide-react";
+import { Zap, AlertCircle, CheckCircle2, Activity, FileText, Info } from "lucide-react";
 
 // ajuste o caminho se o teu card estiver em outro lugar
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -28,26 +22,48 @@ export default function ClientPortal() {
     })();
   }, []);
 
-  // 2) Busca Client pelo email do usuário
-  const clientsQuery = useQuery({
-    queryKey: ["clientPortalClients", currentUser?.email],
+  // 2) Busca (ou cria) Client pelo email do usuário
+  const clientByEmailQuery = useQuery({
+    queryKey: ["clientPortalClientByEmail", currentUser?.email],
     enabled: !!currentUser?.email,
     queryFn: async () => {
-      const { data, error } = await supabase
+      // tenta buscar 1 registro pelo email
+      const { data: found, error: findErr } = await supabase
         .from("clients")
         .select("*")
         .eq("email", currentUser.email)
-        .limit(1);
+        .maybeSingle();
 
-      if (error) throw error;
-      return data ?? [];
+      if (findErr) throw findErr;
+
+      if (found) return found;
+
+      // se NÃO achou, cria automático
+      const payload = {
+        email: currentUser.email,
+        name:
+          currentUser.user_metadata?.name ||
+          currentUser.email?.split("@")?.[0] ||
+          "",
+        status: "ENTRADA",
+      };
+
+      const { data: created, error: insertErr } = await supabase
+        .from("clients")
+        .insert(payload)
+        .select("*")
+        .single();
+
+      if (insertErr) throw insertErr;
+
+      return created;
     },
   });
 
   // seta clientData quando carregar
   useEffect(() => {
-    if (clientsQuery.data?.length) setClientData(clientsQuery.data[0]);
-  }, [clientsQuery.data]);
+    if (clientByEmailQuery.data) setClientData(clientByEmailQuery.data);
+  }, [clientByEmailQuery.data]);
 
   // 3) PlantSales do cliente
   const plantSalesQuery = useQuery({
@@ -100,10 +116,11 @@ export default function ClientPortal() {
 
   const loading =
     !currentUser ||
-    clientsQuery.isLoading ||
+    clientByEmailQuery.isLoading ||
     (clientData?.id && (plantSalesQuery.isLoading || documentsQuery.isLoading)) ||
     (clientData?.power_plant_id && energyQuery.isLoading);
 
+  // Loading
   if (loading) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -112,7 +129,27 @@ export default function ClientPortal() {
     );
   }
 
-  // Se não achou client pro email
+  // Erro geral (por exemplo RLS bloqueando insert/select)
+  if (clientByEmailQuery.isError) {
+    const msg =
+      clientByEmailQuery.error?.message ||
+      "Erro ao carregar seu cadastro. Verifique permissões/RLS no Supabase.";
+    return (
+      <div className="flex items-center justify-center h-96">
+        <Card className="max-w-md">
+          <CardContent className="p-8 text-center">
+            <AlertCircle className="w-12 h-12 text-rose-500 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-slate-900 mb-2">
+              Erro ao abrir o Portal
+            </h3>
+            <p className="text-slate-600">{msg}</p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Se por algum motivo ainda não tiver clientData
   if (!clientData) {
     return (
       <div className="flex items-center justify-center h-96">
@@ -123,7 +160,8 @@ export default function ClientPortal() {
               Dados não encontrados
             </h3>
             <p className="text-slate-600">
-              Não encontramos seu cadastro pelo e-mail <b>{currentUser?.email}</b>.
+              Não encontramos (nem conseguimos criar) seu cadastro pelo e-mail{" "}
+              <b>{currentUser?.email}</b>.
               <br />
               Entre em contato com o suporte.
             </p>
@@ -140,20 +178,22 @@ export default function ClientPortal() {
   // Métricas
   const latestProduction = energyProduction[0];
 
-  const totalProduction = energyProduction.reduce(
-    (sum, p) => sum + (p.production_kwh || 0),
-    0
-  );
+  const totalProduction = useMemo(() => {
+    return energyProduction.reduce((sum, p) => sum + (p.production_kwh || 0), 0);
+  }, [energyProduction]);
 
-  const averageEfficiency =
-    energyProduction.length > 0
+  const averageEfficiency = useMemo(() => {
+    return energyProduction.length > 0
       ? energyProduction.reduce((sum, p) => sum + (p.efficiency_percentage || 0), 0) /
-        energyProduction.length
+          energyProduction.length
       : 0;
+  }, [energyProduction]);
 
-  const activeProject = plantSales.find((s) =>
-    ["in_progress", "installed", "online", "issue"].includes(s.status)
-  );
+  const activeProject = useMemo(() => {
+    return plantSales.find((s) =>
+      ["in_progress", "installed", "online", "issue"].includes(s.status)
+    );
+  }, [plantSales]);
 
   const projectStatus = activeProject?.status || "offline";
   const isOnline = projectStatus === "online";
@@ -167,6 +207,12 @@ export default function ClientPortal() {
     }
   };
 
+  // Formatadores (evita "undefined" feio)
+  const money = (v) => {
+    const n = Number(v || 0);
+    return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+  };
+
   return (
     <div>
       {/* Header */}
@@ -174,9 +220,9 @@ export default function ClientPortal() {
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-3xl font-bold text-slate-900">
-              Olá, {clientData.name}!
+              Olá, {clientData.name || "Cliente"}!
             </h1>
-            <p className="text-slate-600 mt-1">Seu Dashboard de Energia Solar</p>
+            <p className="text-slate-600 mt-1">Seu Portal do Cliente</p>
           </div>
 
           <div className="flex items-center gap-3">
@@ -206,7 +252,7 @@ export default function ClientPortal() {
           <CardContent className="p-6">
             <p className="text-sm text-slate-600">Economia Mensal</p>
             <h2 className="text-2xl font-bold">
-              R$ {clientData.monthly_savings_brl || 0}
+              {money(clientData.monthly_savings_brl)}
             </h2>
           </CardContent>
         </Card>
@@ -215,7 +261,7 @@ export default function ClientPortal() {
           <CardContent className="p-6">
             <p className="text-sm text-slate-600">Economia Total</p>
             <h2 className="text-2xl font-bold">
-              R$ {clientData.total_savings_brl || 0}
+              {money(clientData.total_savings_brl)}
             </h2>
           </CardContent>
         </Card>
@@ -232,7 +278,9 @@ export default function ClientPortal() {
         <Card>
           <CardContent className="p-6">
             <p className="text-sm text-slate-600">Eficiência Média</p>
-            <h2 className="text-2xl font-bold">{averageEfficiency.toFixed(1)}%</h2>
+            <h2 className="text-2xl font-bold">
+              {averageEfficiency.toFixed(1)}%
+            </h2>
           </CardContent>
         </Card>
       </div>
@@ -385,6 +433,27 @@ export default function ClientPortal() {
       <div className="mt-4 text-sm text-slate-600">
         Produção total registrada: <b>{totalProduction.toFixed(0)} kWh</b>
       </div>
+
+      {/* COMO FUNCIONA */}
+      <Card className="mt-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Info className="w-5 h-5" />
+            Como funciona
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-2 text-sm text-slate-700">
+          <p>
+            • Este portal mostra o status do seu projeto, documentos disponíveis e histórico de produção.
+          </p>
+          <p>
+            • As informações são atualizadas conforme o andamento da instalação e integração da usina.
+          </p>
+          <p>
+            • Se algum dado estiver faltando, fale com o suporte para validação do cadastro.
+          </p>
+        </CardContent>
+      </Card>
     </div>
   );
 }

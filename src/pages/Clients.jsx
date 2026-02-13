@@ -653,22 +653,49 @@ export default function Clients() {
                           ]}
                         />
 
+                        {/* ✅ MUDANÇA AQUI: mês fica SEMPRE visível (label fixo) */}
                         <div className="full">
                           <label className="label">Consumo Mensal (kWh)</label>
+
                           <div className="grid3">
                             {Object.entries(formData.ufv_consumo_mensal).map(([mes, val]) => (
-                              <input
+                              <div
                                 key={mes}
-                                className="input"
-                                placeholder={mes.toUpperCase()}
-                                value={val}
-                                onChange={(e) =>
-                                  setFormData((p) => ({
-                                    ...p,
-                                    ufv_consumo_mensal: { ...p.ufv_consumo_mensal, [mes]: e.target.value },
-                                  }))
-                                }
-                              />
+                                style={{
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  gap: 6,
+                                }}
+                              >
+                                <div
+                                  style={{
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    letterSpacing: 0.6,
+                                    opacity: 0.85,
+                                    textTransform: "uppercase",
+                                    paddingLeft: 2,
+                                  }}
+                                >
+                                  {mes.toUpperCase()}
+                                </div>
+
+                                <input
+                                  className="input"
+                                  inputMode="numeric"
+                                  placeholder="0"
+                                  value={val}
+                                  onChange={(e) =>
+                                    setFormData((p) => ({
+                                      ...p,
+                                      ufv_consumo_mensal: {
+                                        ...p.ufv_consumo_mensal,
+                                        [mes]: e.target.value.replace(/[^\d]/g, ""),
+                                      },
+                                    }))
+                                  }
+                                />
+                              </div>
                             ))}
                           </div>
                         </div>
@@ -697,7 +724,9 @@ export default function Clients() {
                             onChange={(e) =>
                               setFormData((p) => ({
                                 ...p,
-                                financeiro_custos: p.financeiro_custos.map((it) => (it.id === c.id ? { ...it, tipo: e.target.value } : it)),
+                                financeiro_custos: p.financeiro_custos.map((it) =>
+                                  it.id === c.id ? { ...it, tipo: e.target.value } : it
+                                ),
                               }))
                             }
                           />
@@ -709,7 +738,9 @@ export default function Clients() {
                             onChange={(e) =>
                               setFormData((p) => ({
                                 ...p,
-                                financeiro_custos: p.financeiro_custos.map((it) => (it.id === c.id ? { ...it, valor: e.target.value } : it)),
+                                financeiro_custos: p.financeiro_custos.map((it) =>
+                                  it.id === c.id ? { ...it, valor: e.target.value } : it
+                                ),
                               }))
                             }
                           />
@@ -755,12 +786,17 @@ export default function Clients() {
                         </div>
                       </div>
 
-                      <div className="kpiBig">
-                        <div>
-                          <b>Total por kWp (depois da divisão):</b> R$ {totalPorKwp.toFixed(2)}
-                        </div>
-                        <div className="muted">Total em R$ (Total por kWp × kWp): R$ {totalEmReais.toFixed(2)}</div>
-                      </div>
+<div className="kpiBig">
+  <div style={{ color: "#000000 !important" }}>
+    <b>Total por kWp (depois da divisão):</b> R$ {totalPorKwp.toFixed(2)}
+  </div>
+
+  <div style={{ color: "#000000 !important" }}>
+    <b>Total em R$ (Total por kWp × kWp):</b> R$ {totalEmReais.toFixed(2)}
+  </div>
+</div>
+
+
                     </Section>
 
                     <Section title="Formas de Pagamento (por % — sem parcelas)">
@@ -784,7 +820,9 @@ export default function Clients() {
                                 onChange={(e) =>
                                   setFormData((prev) => ({
                                     ...prev,
-                                    financeiro_pagamentos: pagamentos.map((x) => (x.id === p.id ? { ...x, forma: e.target.value } : x)),
+                                    financeiro_pagamentos: pagamentos.map((x) =>
+                                      x.id === p.id ? { ...x, forma: e.target.value } : x
+                                    ),
                                   }))
                                 }
                               >
@@ -803,7 +841,9 @@ export default function Clients() {
                                 onChange={(e) =>
                                   setFormData((prev) => ({
                                     ...prev,
-                                    financeiro_pagamentos: pagamentos.map((x) => (x.id === p.id ? { ...x, pct: e.target.value } : x)),
+                                    financeiro_pagamentos: pagamentos.map((x) =>
+                                      x.id === p.id ? { ...x, pct: e.target.value } : x
+                                    ),
                                   }))
                                 }
                               />
