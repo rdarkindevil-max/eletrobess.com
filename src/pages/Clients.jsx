@@ -32,9 +32,7 @@ function normalizeConsumoMensal(v) {
     dez: "",
   };
 
-  if (v && typeof v === "object" && !Array.isArray(v)) {
-    return { ...base, ...v };
-  }
+  if (v && typeof v === "object" && !Array.isArray(v)) return { ...base, ...v };
 
   if (typeof v === "string") {
     try {
@@ -42,17 +40,15 @@ function normalizeConsumoMensal(v) {
       if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
         return { ...base, ...parsed };
       }
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
 
   return base;
 }
 
 /**
- * ✅ Corrige "financeiro não salva" em muitos casos:
- * - Se JSONB vier como string, converte
+ * ✅ Corrige JSONB array:
+ * - Se vier string JSON do banco, converte
  * - Garante array
  */
 function normalizeJsonArray(v, fallback) {
@@ -62,12 +58,75 @@ function normalizeJsonArray(v, fallback) {
     try {
       const parsed = JSON.parse(v);
       if (Array.isArray(parsed)) return parsed;
-    } catch {
-      // ignore
-    }
+    } catch {}
   }
 
   return fallback;
+}
+
+/**
+ * ✅ Rateio dados (jsonb):
+ * - Se vier string, parse
+ * - Garante shape
+ */
+function normalizeRateioDados(v) {
+  const base = {
+    numero_cliente: "",
+    cpf: "",
+    pct: "",
+    endereco_geradora: "",
+    docs: [], // urls
+  };
+
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    return { ...base, ...v, docs: Array.isArray(v.docs) ? v.docs : [] };
+  }
+
+  if (typeof v === "string") {
+    try {
+      const parsed = JSON.parse(v);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return {
+          ...base,
+          ...parsed,
+          docs: Array.isArray(parsed.docs) ? parsed.docs : [],
+        };
+      }
+    } catch {}
+  }
+
+  return base;
+}
+
+/**
+ * ✅ Upload docs do Rateio para Supabase Storage:
+ * - bucket: client-docs
+ * - path: rateio/<clientId>/timestamp-rand.ext
+ * - retorna array de URLs públicas
+ */
+async function uploadRateioDocs({ clientId, files }) {
+  const list = Array.isArray(files) ? files : [];
+  if (!clientId || list.length === 0) return [];
+
+  const uploaded = [];
+
+  for (const file of list) {
+    const ext = (file?.name || "").split(".").pop() || "bin";
+    const path = `rateio/${clientId}/${Date.now()}-${Math.random()
+      .toString(16)
+      .slice(2)}.${ext}`;
+
+    const { error: upErr } = await supabase.storage
+      .from("client-docs")
+      .upload(path, file, { upsert: false });
+
+    if (upErr) throw upErr;
+
+    const { data } = supabase.storage.from("client-docs").getPublicUrl(path);
+    uploaded.push(data.publicUrl);
+  }
+
+  return uploaded;
 }
 
 function normalizeClient(c) {
@@ -92,7 +151,6 @@ function normalizeClient(c) {
     city: safe.city ?? "",
     state: safe.state ?? "",
 
-    // ✅ AQUI: se vier string, parseia. Se faltar mês, completa.
     ufv_consumo_mensal: normalizeConsumoMensal(safe.ufv_consumo_mensal),
 
     ufv_potencia_kwp: safe.ufv_potencia_kwp ?? "",
@@ -102,7 +160,11 @@ function normalizeClient(c) {
     ufv_inversores: safe.ufv_inversores ?? "",
     ufv_modulos: safe.ufv_modulos ?? "",
 
-    // ✅ arrays JSONB (se vierem string também corrige)
+    // ✅ rateio dados (jsonb)
+    ufv_rateio_dados: normalizeRateioDados(safe.ufv_rateio_dados),
+    // ✅ arquivos novos (não vai pro banco)
+    ufv_rateio_docs_files: [],
+
     financeiro_custos: normalizeJsonArray(safe.financeiro_custos, [
       { id: uid(), tipo: "Equipamentos", valor: "" },
       { id: uid(), tipo: "Serviços", valor: "" },
@@ -150,26 +212,15 @@ function sumEconomia(list) {
 }
 
 function avgConsumo(list) {
-  const arr = (list || [])
-    .map(getConsumoMedioCliente)
-    .filter((n) => n > 0);
+  const arr = (list || []).map(getConsumoMedioCliente).filter((n) => n > 0);
   if (arr.length === 0) return 0;
   return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 
-/**
- * ✅ IMPORTANTE (arrumado aqui):
- * - Garante json/arrays SEMPRE no formato certo antes de salvar
- * - NÃO manda `id` no INSERT/UPDATE (deixa o banco gerar)
- * - No UPDATE não manda `created_by`
- */
 export default function Clients() {
   const navigate = useNavigate();
 
-  const initialFormState = useMemo(
-    () => normalizeClient({ status: "ENTRADA" }),
-    []
-  );
+  const initialFormState = useMemo(() => normalizeClient({ status: "ENTRADA" }), []);
 
   const [clients, setClients] = useState([]);
   const [formData, setFormData] = useState(initialFormState);
@@ -177,7 +228,6 @@ export default function Clients() {
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingClientId, setEditingClientId] = useState(null);
 
-  // filtros
   const [q, setQ] = useState("");
   const [fStatus, setFStatus] = useState("all");
   const [fType, setFType] = useState("all");
@@ -201,8 +251,7 @@ export default function Clients() {
       setErrMsg(error.message);
       setClients([]);
     } else {
-      const normalized = (data || []).map((c) => normalizeClient(c));
-      setClients(normalized);
+      setClients((data || []).map((c) => normalizeClient(c)));
     }
     setLoading(false);
   };
@@ -212,7 +261,6 @@ export default function Clients() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // CEP
   const fetchAddressByCep = async (cep) => {
     const clean = (cep || "").replace(/\D/g, "");
     if (clean.length !== 8) return;
@@ -230,26 +278,16 @@ export default function Clients() {
           state: data.uf || "",
         }));
       }
-    } catch {
-      // ignora
-    }
+    } catch {}
   };
 
   // UFV - CONSUMO
   const consumoValores = useMemo(() => {
-    return Object.values(formData.ufv_consumo_mensal || {}).map(
-      (v) => Number(v) || 0
-    );
+    return Object.values(formData.ufv_consumo_mensal || {}).map((v) => Number(v) || 0);
   }, [formData.ufv_consumo_mensal]);
 
-  const consumoAnual = useMemo(
-    () => consumoValores.reduce((a, b) => a + b, 0),
-    [consumoValores]
-  );
-  const consumoMedio = useMemo(
-    () => (consumoAnual / 12).toFixed(2),
-    [consumoAnual]
-  );
+  const consumoAnual = useMemo(() => consumoValores.reduce((a, b) => a + b, 0), [consumoValores]);
+  const consumoMedio = useMemo(() => (consumoAnual / 12).toFixed(2), [consumoAnual]);
 
   // UFV - GERAÇÃO
   const kwp = Number(formData.ufv_potencia_kwp || 0);
@@ -259,8 +297,7 @@ export default function Clients() {
 
   // FINANCEIRO
   const custoFornecedor = Number(
-    formData.financeiro_custos.find((c) => c.tipo === "Equipamentos")?.valor ||
-      0
+    formData.financeiro_custos.find((c) => c.tipo === "Equipamentos")?.valor || 0
   );
   const custoServico = Number(
     formData.financeiro_custos.find((c) => c.tipo === "Serviços")?.valor || 0
@@ -302,23 +339,20 @@ export default function Clients() {
     setIsFormOpen(true);
   };
 
-  // ✅ PAYLOAD LIMPO (sempre salva json certo)
+  // ✅ PAYLOAD LIMPO (sem files, sem id)
   const buildPayloadForDb = (fd) => {
-    const { id: _ignoreId, ...rest } = fd || {};
+    const { id: _ignoreId, ufv_rateio_docs_files: _ignoreFiles, ...rest } = fd || {};
+
+    const rateioDados = normalizeRateioDados(fd.ufv_rateio_dados);
+    // se não for SIM, zera dados
+    const finalRateioDados = fd.ufv_rateio === "SIM" ? rateioDados : normalizeRateioDados({});
 
     return {
       ...rest,
-
-      // ✅ garante objeto (não string)
       ufv_consumo_mensal: normalizeConsumoMensal(fd.ufv_consumo_mensal),
-
-      // ✅ garante arrays
-      financeiro_custos: Array.isArray(fd.financeiro_custos)
-        ? fd.financeiro_custos
-        : [],
-      financeiro_pagamentos: Array.isArray(fd.financeiro_pagamentos)
-        ? fd.financeiro_pagamentos
-        : [],
+      financeiro_custos: Array.isArray(fd.financeiro_custos) ? fd.financeiro_custos : [],
+      financeiro_pagamentos: Array.isArray(fd.financeiro_pagamentos) ? fd.financeiro_pagamentos : [],
+      ufv_rateio_dados: finalRateioDados,
     };
   };
 
@@ -334,76 +368,124 @@ export default function Clients() {
     const { data: authData } = await supabase.auth.getUser();
     const userId = authData?.user?.id || null;
 
-    const payload = buildPayloadForDb(formData);
-    console.log("✅ SAVE PAYLOAD =>", payload);
+    const payloadBase = buildPayloadForDb(formData);
 
-    if (editingClientId) {
-      const { created_by, ...updatePayload } = payload;
+    try {
+      if (editingClientId) {
+        // UPDATE
+        const { created_by, ...updatePayload } = payloadBase;
 
-      const { error } = await supabase
-        .from("clients")
-        .update(updatePayload)
-        .eq("id", editingClientId);
+        // 1) atualiza dados base
+        const { error: upErr } = await supabase
+          .from("clients")
+          .update(updatePayload)
+          .eq("id", editingClientId);
 
-      if (error) {
-        setErrMsg(error.message);
-        alert("Erro ao atualizar: " + error.message);
-        return;
+        if (upErr) throw upErr;
+
+        // 2) se tiver docs novos, sobe e depois atualiza urls
+        if (formData.ufv_rateio === "SIM" && (formData.ufv_rateio_docs_files || []).length > 0) {
+          const newUrls = await uploadRateioDocs({
+            clientId: editingClientId,
+            files: formData.ufv_rateio_docs_files,
+          });
+
+          const oldUrls = Array.isArray(formData.ufv_rateio_dados?.docs)
+            ? formData.ufv_rateio_dados.docs
+            : [];
+
+          const merged = [...oldUrls, ...newUrls];
+
+          const { error: upDocsErr } = await supabase
+            .from("clients")
+            .update({
+              ufv_rateio_dados: {
+                ...normalizeRateioDados(formData.ufv_rateio_dados),
+                docs: merged,
+              },
+            })
+            .eq("id", editingClientId);
+
+          if (upDocsErr) throw upDocsErr;
+        }
+
+        alert("Cliente atualizado!");
+      } else {
+        // INSERT (pega id retornado, depois sobe docs e atualiza)
+        const insertPayload = { ...payloadBase, created_by: userId };
+
+        const { data: inserted, error: insErr } = await supabase
+          .from("clients")
+          .insert(insertPayload)
+          .select("id")
+          .single();
+
+        if (insErr) throw insErr;
+
+        const newId = inserted?.id;
+
+        // docs do rateio
+        if (newId && formData.ufv_rateio === "SIM" && (formData.ufv_rateio_docs_files || []).length > 0) {
+          const newUrls = await uploadRateioDocs({
+            clientId: newId,
+            files: formData.ufv_rateio_docs_files,
+          });
+
+          const oldUrls = Array.isArray(formData.ufv_rateio_dados?.docs)
+            ? formData.ufv_rateio_dados.docs
+            : [];
+
+          const merged = [...oldUrls, ...newUrls];
+
+          const { error: upDocsErr } = await supabase
+            .from("clients")
+            .update({
+              ufv_rateio_dados: {
+                ...normalizeRateioDados(formData.ufv_rateio_dados),
+                docs: merged,
+              },
+            })
+            .eq("id", newId);
+
+          if (upDocsErr) throw upDocsErr;
+        }
+
+        alert("Cliente adicionado!");
       }
-      alert("Cliente atualizado!");
-    } else {
-      const insertPayload = { ...payload, created_by: userId };
 
-      const { error } = await supabase.from("clients").insert(insertPayload);
-
-      if (error) {
-        setErrMsg(error.message);
-        alert("Erro ao salvar: " + error.message);
-        return;
-      }
-      alert("Cliente adicionado!");
+      setFormData(initialFormState);
+      setIsFormOpen(false);
+      setActiveTab("basico");
+      setEditingClientId(null);
+      await loadClients();
+    } catch (err) {
+      const msg = err?.message || "Erro ao salvar";
+      setErrMsg(msg);
+      alert("Erro ao salvar: " + msg);
     }
-
-    setFormData(initialFormState);
-    setIsFormOpen(false);
-    setActiveTab("basico");
-    setEditingClientId(null);
-    await loadClients();
   };
 
-  // ✅ DELETE
   const handleDelete = async (id) => {
     setErrMsg("");
 
     try {
-      console.log("🗑 Tentando excluir client id:", id);
-
-      const { data, error } = await supabase
-        .from("clients")
-        .delete()
-        .eq("id", id)
-        .select("id");
+      const { data, error } = await supabase.from("clients").delete().eq("id", id).select("id");
 
       if (error) {
-        console.error("❌ DELETE ERROR:", error);
         setErrMsg(error.message);
         alert("Erro ao excluir: " + error.message);
         return;
       }
 
       if (!data || data.length === 0) {
-        const msg =
-          "Não deletou (retornou vazio). Normalmente é RLS/policy bloqueando OU o id não existe.";
-        console.warn("⚠️", msg);
+        const msg = "Não deletou (retornou vazio). Normalmente é RLS/policy bloqueando OU o id não existe.";
         setErrMsg(msg);
         alert(msg);
         return;
       }
 
-      console.log("✅ Deletado:", data);
       await loadClients();
     } catch (e) {
-      console.error("❌ DELETE CRASH:", e);
       const msg = e?.message || "Erro inesperado ao excluir";
       setErrMsg(msg);
       alert(msg);
@@ -420,20 +502,11 @@ export default function Clients() {
     return (clients || []).filter((c) => {
       const matchQ =
         !qq ||
-        [
-          c?.name,
-          c?.email,
-          c?.contact_number,
-          c?.document,
-          c?.origin,
-          c?.city,
-          c?.state,
-        ]
+        [c?.name, c?.email, c?.contact_number, c?.document, c?.origin, c?.city, c?.state]
           .filter(Boolean)
           .some((v) => String(v).toLowerCase().includes(qq));
 
-      const matchStatus =
-        fStatus === "all" || (c?.status || "ENTRADA") === fStatus;
+      const matchStatus = fStatus === "all" || (c?.status || "ENTRADA") === fStatus;
       const matchType = fType === "all" || (c?.type || "") === fType;
       const matchOrigin = fOrigin === "all" || (c?.origin || "") === fOrigin;
 
@@ -441,9 +514,8 @@ export default function Clients() {
     });
   }, [clients, q, fStatus, fType, fOrigin]);
 
-  // (não usados no layout, mas deixei)
-  const economiaTotal = useMemo(() => sumEconomia(filtered), [filtered]);
-  const consumoMedioLista = useMemo(() => avgConsumo(filtered), [filtered]);
+  useMemo(() => sumEconomia(filtered), [filtered]);
+  useMemo(() => avgConsumo(filtered), [filtered]);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -474,19 +546,10 @@ export default function Clients() {
         <div className="searchBar2">
           <div className="searchInputWrap2">
             <span className="searchIcon2">🔎</span>
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="Buscar clientes..."
-              className="searchInput2"
-            />
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar clientes..." className="searchInput2" />
           </div>
 
-          <select
-            className="select2"
-            value={fType}
-            onChange={(e) => setFType(e.target.value)}
-          >
+          <select className="select2" value={fType} onChange={(e) => setFType(e.target.value)}>
             <option value="all">Todos os tipos</option>
             <option value="RESIDENCIAL">Residencial</option>
             <option value="COMERCIAL">Comercial</option>
@@ -494,11 +557,7 @@ export default function Clients() {
             <option value="RURAL">Rural</option>
           </select>
 
-          <select
-            className="select2"
-            value={fStatus}
-            onChange={(e) => setFStatus(e.target.value)}
-          >
+          <select className="select2" value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
             <option value="all">Todos os status</option>
             <option value="ENTRADA">Entrada</option>
             <option value="FECHADO">Fechado</option>
@@ -509,9 +568,7 @@ export default function Clients() {
         <div className="tableCard2">
           <div className="tableHead2">
             <div className="tableTitle2">Clientes</div>
-            <div className="tableMeta2">
-              {loading ? "Carregando..." : `${filtered.length} resultado(s)`}
-            </div>
+            <div className="tableMeta2">{loading ? "Carregando..." : `${filtered.length} resultado(s)`}</div>
           </div>
 
           <div className="p-4">
@@ -532,9 +589,7 @@ export default function Clients() {
                     <div key={c.id} className="clientCard2">
                       <div className="clientTop2">
                         <div className="clientLeft2">
-                          <div className="avatar2">
-                            {(c.name || "C")[0]?.toUpperCase()}
-                          </div>
+                          <div className="avatar2">{(c.name || "C")[0]?.toUpperCase()}</div>
 
                           <div className="clientText2">
                             <div className="clientName2">{c.name || "-"}</div>
@@ -554,12 +609,8 @@ export default function Clients() {
                           {c.state ? `, ${c.state}` : ""}
                         </div>
                         <div className="chip2">{c.service_category || "—"}</div>
-                        <div className="chip2">
-                          {consumo ? `${consumo.toFixed(0)} kWh` : "—"}
-                        </div>
-                        <div className="clientTotal2">
-                          {total ? formatBRL(total) : "—"}
-                        </div>
+                        <div className="chip2">{consumo ? `${consumo.toFixed(0)} kWh` : "—"}</div>
+                        <div className="clientTotal2">{total ? formatBRL(total) : "—"}</div>
                       </div>
 
                       <div className="clientActions2">
@@ -581,7 +632,6 @@ export default function Clients() {
                           onClick={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-
                             if (!confirm("Excluir este cliente?")) return;
                             handleDelete(c.id);
                           }}
@@ -597,8 +647,7 @@ export default function Clients() {
           </div>
 
           <div className="border-t px-4 py-3 text-xs text-muted-foreground">
-            Dica: use os filtros pra priorizar follow-up e organizar funil
-            comercial.
+            Dica: use os filtros pra priorizar follow-up e organizar funil comercial.
           </div>
         </div>
 
@@ -636,40 +685,19 @@ export default function Clients() {
                 </div>
 
                 <div className="tabs">
-                  <button
-                    type="button"
-                    className={"tab " + (activeTab === "basico" ? "active" : "")}
-                    onClick={() => setActiveTab("basico")}
-                  >
+                  <button type="button" className={"tab " + (activeTab === "basico" ? "active" : "")} onClick={() => setActiveTab("basico")}>
                     Básico
                   </button>
-                  <button
-                    type="button"
-                    className={
-                      "tab " + (activeTab === "endereco" ? "active" : "")
-                    }
-                    onClick={() => setActiveTab("endereco")}
-                  >
+                  <button type="button" className={"tab " + (activeTab === "endereco" ? "active" : "")} onClick={() => setActiveTab("endereco")}>
                     Endereço
                   </button>
                   {formData.service_category && (
-                    <button
-                      type="button"
-                      className={"tab " + (activeTab === "nicho" ? "active" : "")}
-                      onClick={() => setActiveTab("nicho")}
-                    >
+                    <button type="button" className={"tab " + (activeTab === "nicho" ? "active" : "")} onClick={() => setActiveTab("nicho")}>
                       Nicho
                     </button>
                   )}
                   {formData.service_category && (
-                    <button
-                      type="button"
-                      className={
-                        "tab " +
-                        (activeTab === "financeiro" ? "active" : "")
-                      }
-                      onClick={() => setActiveTab("financeiro")}
-                    >
+                    <button type="button" className={"tab " + (activeTab === "financeiro" ? "active" : "")} onClick={() => setActiveTab("financeiro")}>
                       Financeiro
                     </button>
                   )}
@@ -689,34 +717,13 @@ export default function Clients() {
                     />
                     <div />
 
-                    <InputField
-                      label="Nome / Razão Social"
-                      value={formData.name}
-                      onChange={(v) => setField("name", v)}
-                    />
-                    <InputField
-                      label="CPF / CNPJ"
-                      value={formData.document}
-                      onChange={(v) => setField("document", v)}
-                    />
+                    <InputField label="Nome / Razão Social" value={formData.name} onChange={(v) => setField("name", v)} />
+                    <InputField label="CPF / CNPJ" value={formData.document} onChange={(v) => setField("document", v)} />
 
-                    <InputField
-                      label="E-mail"
-                      value={formData.email}
-                      onChange={(v) => setField("email", v)}
-                    />
-                    <InputField
-                      label="Telefone"
-                      value={formData.contact_number}
-                      onChange={(v) => setField("contact_number", v)}
-                    />
+                    <InputField label="E-mail" value={formData.email} onChange={(v) => setField("email", v)} />
+                    <InputField label="Telefone" value={formData.contact_number} onChange={(v) => setField("contact_number", v)} />
 
-                    <InputField
-                      label="Data de Nascimento / Fundação"
-                      type="date"
-                      value={formData.birth_date}
-                      onChange={(v) => setField("birth_date", v)}
-                    />
+                    <InputField label="Data de Nascimento / Fundação" type="date" value={formData.birth_date} onChange={(v) => setField("birth_date", v)} />
 
                     <SelectField
                       label="Tipo de Cliente"
@@ -745,11 +752,7 @@ export default function Clients() {
                     <div />
 
                     <div className="full">
-                      <InputField
-                        label="Observações"
-                        value={formData.observations}
-                        onChange={(v) => setField("observations", v)}
-                      />
+                      <InputField label="Observações" value={formData.observations} onChange={(v) => setField("observations", v)} />
                     </div>
 
                     <SelectField
@@ -781,31 +784,11 @@ export default function Clients() {
                         fetchAddressByCep(v);
                       }}
                     />
-                    <InputField
-                      label="Endereço"
-                      value={formData.address}
-                      onChange={(v) => setField("address", v)}
-                    />
-                    <InputField
-                      label="Número"
-                      value={formData.house_number}
-                      onChange={(v) => setField("house_number", v)}
-                    />
-                    <InputField
-                      label="Bairro"
-                      value={formData.neighborhood}
-                      onChange={(v) => setField("neighborhood", v)}
-                    />
-                    <InputField
-                      label="Cidade"
-                      value={formData.city}
-                      onChange={(v) => setField("city", v)}
-                    />
-                    <InputField
-                      label="Estado"
-                      value={formData.state}
-                      onChange={(v) => setField("state", v)}
-                    />
+                    <InputField label="Endereço" value={formData.address} onChange={(v) => setField("address", v)} />
+                    <InputField label="Número" value={formData.house_number} onChange={(v) => setField("house_number", v)} />
+                    <InputField label="Bairro" value={formData.neighborhood} onChange={(v) => setField("neighborhood", v)} />
+                    <InputField label="Cidade" value={formData.city} onChange={(v) => setField("city", v)} />
+                    <InputField label="Estado" value={formData.state} onChange={(v) => setField("state", v)} />
                   </div>
                 )}
 
@@ -813,18 +796,8 @@ export default function Clients() {
                   <div className="grid2">
                     {formData.service_category === "UFV" ? (
                       <>
-                        <InputField
-                          label="Potência do Sistema (kWp)"
-                          type="number"
-                          value={formData.ufv_potencia_kwp}
-                          onChange={(v) => setField("ufv_potencia_kwp", v)}
-                        />
-                        <InputField
-                          label="Irradiação (kWh/m²/dia)"
-                          type="number"
-                          value={formData.ufv_irradiacao}
-                          onChange={(v) => setField("ufv_irradiacao", v)}
-                        />
+                        <InputField label="Potência do Sistema (kWp)" type="number" value={formData.ufv_potencia_kwp} onChange={(v) => setField("ufv_potencia_kwp", v)} />
+                        <InputField label="Irradiação (kWh/m²/dia)" type="number" value={formData.ufv_irradiacao} onChange={(v) => setField("ufv_irradiacao", v)} />
 
                         <SelectField
                           label="Tipos de Telhado"
@@ -844,81 +817,149 @@ export default function Clients() {
                         <SelectField
                           label="Opção de Rateio"
                           value={formData.ufv_rateio}
-                          onChange={(v) => setField("ufv_rateio", v)}
+                          onChange={(v) => {
+                            setField("ufv_rateio", v);
+                            if (v !== "SIM") {
+                              setFormData((p) => ({
+                                ...p,
+                                ufv_rateio_dados: normalizeRateioDados({}),
+                                ufv_rateio_docs_files: [],
+                              }));
+                            }
+                          }}
                           options={[
                             { value: "SIM", label: "SIM" },
                             { value: "NÃO", label: "NÃO" },
                           ]}
                         />
 
+                        {/* ✅ BLOCO RATEIO */}
+                        {formData.ufv_rateio === "SIM" && (
+                          <div className="full" style={{ marginTop: 10 }}>
+                            <div className="section">
+                              <div className="sectionTitle">Rateio</div>
+                              <div className="sectionBody">
+                                <div className="grid2">
+                                  <InputField
+                                    label="Número do cliente"
+                                    value={formData.ufv_rateio_dados?.numero_cliente || ""}
+                                    onChange={(v) =>
+                                      setFormData((p) => ({
+                                        ...p,
+                                        ufv_rateio_dados: { ...(p.ufv_rateio_dados || {}), numero_cliente: v },
+                                      }))
+                                    }
+                                  />
+
+                                  <InputField
+                                    label="CPF"
+                                    value={formData.ufv_rateio_dados?.cpf || ""}
+                                    onChange={(v) =>
+                                      setFormData((p) => ({
+                                        ...p,
+                                        ufv_rateio_dados: { ...(p.ufv_rateio_dados || {}), cpf: v },
+                                      }))
+                                    }
+                                  />
+
+                                  <InputField
+                                    label="% do rateio"
+                                    type="number"
+                                    value={formData.ufv_rateio_dados?.pct || ""}
+                                    onChange={(v) =>
+                                      setFormData((p) => ({
+                                        ...p,
+                                        ufv_rateio_dados: { ...(p.ufv_rateio_dados || {}), pct: v },
+                                      }))
+                                    }
+                                  />
+
+                                  <InputField
+                                    label="Endereço da geradora"
+                                    value={formData.ufv_rateio_dados?.endereco_geradora || ""}
+                                    onChange={(v) =>
+                                      setFormData((p) => ({
+                                        ...p,
+                                        ufv_rateio_dados: { ...(p.ufv_rateio_dados || {}), endereco_geradora: v },
+                                      }))
+                                    }
+                                  />
+
+                                  <div className="full">
+                                    <label className="label">Foto dos documentos</label>
+                                    <input
+                                      className="input"
+                                      type="file"
+                                      accept="image/*,application/pdf"
+                                      multiple
+                                      onChange={(e) => {
+                                        const files = Array.from(e.target.files || []);
+                                        setFormData((p) => ({ ...p, ufv_rateio_docs_files: files }));
+                                      }}
+                                    />
+
+                                    {/* docs já salvos */}
+                                    {Array.isArray(formData.ufv_rateio_dados?.docs) &&
+                                      formData.ufv_rateio_dados.docs.length > 0 && (
+                                        <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                          {formData.ufv_rateio_dados.docs.map((url) => (
+                                            <a key={url} href={url} target="_blank" rel="noreferrer" className="btn ghost" style={{ height: 34 }}>
+                                              Ver doc
+                                            </a>
+                                          ))}
+                                        </div>
+                                      )}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
                         <div className="full">
                           <label className="label">Consumo Mensal (kWh)</label>
 
                           <div className="grid3">
-                            {Object.entries(formData.ufv_consumo_mensal).map(
-                              ([mes, val]) => (
+                            {Object.entries(formData.ufv_consumo_mensal).map(([mes, val]) => (
+                              <div key={mes} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                                 <div
-                                  key={mes}
                                   style={{
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    gap: 6,
+                                    fontSize: 12,
+                                    fontWeight: 700,
+                                    letterSpacing: 0.6,
+                                    color: "#000",
+                                    opacity: 1,
+                                    textTransform: "uppercase",
+                                    paddingLeft: 2,
                                   }}
                                 >
-                                  <div
-                                    style={{
-                                      fontSize: 12,
-                                      fontWeight: 700,
-                                      letterSpacing: 0.6,
-                                          color: "#000",  
-                                      opacity: 1,
-                                      textTransform: "uppercase",
-                                      paddingLeft: 2,
-                                    }}
-                                  >
-                                    {mes.toUpperCase()}
-                                  </div>
-
-                                  <input
-                                    className="input"
-                                    inputMode="numeric"
-                                    placeholder="0"
-                                    value={val}
-                                    onChange={(e) =>
-                                      setFormData((p) => ({
-                                        ...p,
-                                        ufv_consumo_mensal: {
-                                          ...p.ufv_consumo_mensal,
-                                          [mes]: e.target.value.replace(
-                                            /[^\d]/g,
-                                            ""
-                                          ),
-                                        },
-                                      }))
-                                    }
-                                  />
+                                  {mes.toUpperCase()}
                                 </div>
-                              )
-                            )}
+
+                                <input
+                                  className="input"
+                                  inputMode="numeric"
+                                  placeholder="0"
+                                  value={val}
+                                  onChange={(e) =>
+                                    setFormData((p) => ({
+                                      ...p,
+                                      ufv_consumo_mensal: {
+                                        ...p.ufv_consumo_mensal,
+                                        [mes]: e.target.value.replace(/[^\d]/g, ""),
+                                      },
+                                    }))
+                                  }
+                                />
+                              </div>
+                            ))}
                           </div>
                         </div>
 
-                        <ReadOnlyField
-                          label="Consumo Anual (kWh)"
-                          value={String(consumoAnual)}
-                        />
-                        <ReadOnlyField
-                          label="Média Mensal (kWh)"
-                          value={String(consumoMedio)}
-                        />
-                        <ReadOnlyField
-                          label="Geração Mensal Estimada (kWh)"
-                          value={String(geracaoMensal.toFixed(2))}
-                        />
-                        <ReadOnlyField
-                          label="Geração Anual Estimada (kWh)"
-                          value={String(geracaoAnual.toFixed(2))}
-                        />
+                        <ReadOnlyField label="Consumo Anual (kWh)" value={String(consumoAnual)} />
+                        <ReadOnlyField label="Média Mensal (kWh)" value={String(consumoMedio)} />
+                        <ReadOnlyField label="Geração Mensal Estimada (kWh)" value={String(geracaoMensal.toFixed(2))} />
+                        <ReadOnlyField label="Geração Anual Estimada (kWh)" value={String(geracaoAnual.toFixed(2))} />
                       </>
                     ) : (
                       <div className="full" style={{ color: "#64748b" }}>
@@ -939,12 +980,7 @@ export default function Clients() {
                             onChange={(e) =>
                               setFormData((p) => ({
                                 ...p,
-                                financeiro_custos: p.financeiro_custos.map(
-                                  (it) =>
-                                    it.id === c.id
-                                      ? { ...it, tipo: e.target.value }
-                                      : it
-                                ),
+                                financeiro_custos: p.financeiro_custos.map((it) => (it.id === c.id ? { ...it, tipo: e.target.value } : it)),
                               }))
                             }
                           />
@@ -956,12 +992,7 @@ export default function Clients() {
                             onChange={(e) =>
                               setFormData((p) => ({
                                 ...p,
-                                financeiro_custos: p.financeiro_custos.map(
-                                  (it) =>
-                                    it.id === c.id
-                                      ? { ...it, valor: e.target.value }
-                                      : it
-                                ),
+                                financeiro_custos: p.financeiro_custos.map((it) => (it.id === c.id ? { ...it, valor: e.target.value } : it)),
                               }))
                             }
                           />
@@ -971,9 +1002,7 @@ export default function Clients() {
                             onClick={() =>
                               setFormData((p) => ({
                                 ...p,
-                                financeiro_custos: p.financeiro_custos.filter(
-                                  (it) => it.id !== c.id
-                                ),
+                                financeiro_custos: p.financeiro_custos.filter((it) => it.id !== c.id),
                               }))
                             }
                           >
@@ -988,10 +1017,7 @@ export default function Clients() {
                         onClick={() =>
                           setFormData((p) => ({
                             ...p,
-                            financeiro_custos: [
-                              ...p.financeiro_custos,
-                              { id: uid(), tipo: "", valor: "" },
-                            ],
+                            financeiro_custos: [...p.financeiro_custos, { id: uid(), tipo: "", valor: "" }],
                           }))
                         }
                       >
@@ -1016,7 +1042,6 @@ export default function Clients() {
                         <div style={{ color: "#000000" }}>
                           <b>Total por kWp (depois da divisão):</b> R$ {totalPorKwp.toFixed(2)}
                         </div>
-
                         <div style={{ color: "#000000" }}>
                           <b>Total em R$ (Total por kWp × kWp):</b> R$ {totalEmReais.toFixed(2)}
                         </div>
@@ -1044,11 +1069,7 @@ export default function Clients() {
                                 onChange={(e) =>
                                   setFormData((prev) => ({
                                     ...prev,
-                                    financeiro_pagamentos: pagamentos.map((x) =>
-                                      x.id === p.id
-                                        ? { ...x, forma: e.target.value }
-                                        : x
-                                    ),
+                                    financeiro_pagamentos: pagamentos.map((x) => (x.id === p.id ? { ...x, forma: e.target.value } : x)),
                                   }))
                                 }
                               >
@@ -1067,11 +1088,7 @@ export default function Clients() {
                                 onChange={(e) =>
                                   setFormData((prev) => ({
                                     ...prev,
-                                    financeiro_pagamentos: pagamentos.map((x) =>
-                                      x.id === p.id
-                                        ? { ...x, pct: e.target.value }
-                                        : x
-                                    ),
+                                    financeiro_pagamentos: pagamentos.map((x) => (x.id === p.id ? { ...x, pct: e.target.value } : x)),
                                   }))
                                 }
                               />
@@ -1079,11 +1096,7 @@ export default function Clients() {
 
                             <div>
                               <label className="label">Valor (R$)</label>
-                              <input
-                                className="input"
-                                value={p.valor.toFixed(2)}
-                                readOnly
-                              />
+                              <input className="input" value={p.valor.toFixed(2)} readOnly />
                             </div>
 
                             <div className="payDel">
@@ -1093,9 +1106,7 @@ export default function Clients() {
                                 onClick={() =>
                                   setFormData((prev) => ({
                                     ...prev,
-                                    financeiro_pagamentos: pagamentos.filter(
-                                      (x) => x.id !== p.id
-                                    ),
+                                    financeiro_pagamentos: pagamentos.filter((x) => x.id !== p.id),
                                   }))
                                 }
                               >
@@ -1112,21 +1123,14 @@ export default function Clients() {
                         onClick={() =>
                           setFormData((p) => ({
                             ...p,
-                            financeiro_pagamentos: [
-                              ...p.financeiro_pagamentos,
-                              { id: uid(), forma: "PIX", pct: 0 },
-                            ],
+                            financeiro_pagamentos: [...p.financeiro_pagamentos, { id: uid(), forma: "PIX", pct: 0 }],
                           }))
                         }
                       >
                         + Adicionar forma
                       </button>
 
-                      {!pctOk && (
-                        <div className="warn">
-                          As porcentagens precisam fechar em 100%.
-                        </div>
-                      )}
+                      {!pctOk && <div className="warn">As porcentagens precisam fechar em 100%.</div>}
                     </Section>
                   </div>
                 )}
@@ -1176,12 +1180,7 @@ function InputField({ label, value, onChange, type = "text" }) {
   return (
     <div>
       <label className="label">{label}</label>
-      <input
-        className="input"
-        type={type}
-        value={value || ""}
-        onChange={(e) => onChange(e.target.value)}
-      />
+      <input className="input" type={type} value={value || ""} onChange={(e) => onChange(e.target.value)} />
     </div>
   );
 }
@@ -1199,11 +1198,7 @@ function SelectField({ label, value, onChange, options }) {
   return (
     <div>
       <label className="label">{label}</label>
-      <select
-        className="input"
-        value={value || ""}
-        onChange={(e) => onChange(e.target.value)}
-      >
+      <select className="input" value={value || ""} onChange={(e) => onChange(e.target.value)}>
         <option value="">Selecione</option>
         {options.map((o) => (
           <option key={o.value} value={o.value}>
