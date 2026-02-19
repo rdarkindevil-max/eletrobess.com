@@ -10,21 +10,27 @@ export default function RequireAuth() {
   useEffect(() => {
     let mounted = true;
 
-    // 1) pega sessão atual
-    supabase.auth.getSession().then(({ data }) => {
+    supabase.auth.getSession().then(({ data, error }) => {
       if (!mounted) return;
-      setSession(data?.session ?? null);
+      if (error) {
+        setSession(null);
+      } else {
+        setSession(data?.session ?? null);
+      }
       setChecking(false);
     });
 
-    // 2) escuta mudanças de sessão
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    const { data } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      if (!mounted) return;
       setSession(newSession ?? null);
+      // se ainda tava checando, libera
+      setChecking(false);
     });
 
     return () => {
       mounted = false;
-      sub?.subscription?.unsubscribe();
+      // ✅ forma correta
+      data?.subscription?.unsubscribe?.();
     };
   }, []);
 

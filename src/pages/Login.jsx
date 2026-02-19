@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Turnstile } from "@marsidev/react-turnstile";
 import { supabase } from "../lib/supabaseClient";
@@ -18,14 +18,26 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState({ type: "", text: "" });
 
-  // Turnstile
+  // Turnstile (Cloudflare)
   const siteKey = (import.meta.env.VITE_TURNSTILE_SITE_KEY || "").trim();
-  const shouldShowCaptcha = true;
+  const shouldShowCaptcha = Boolean(siteKey);
 
   const [captchaToken, setCaptchaToken] = useState("");
   const [captchaError, setCaptchaError] = useState("");
+  const [captchaBroken, setCaptchaBroken] = useState(false); // se widget falhar, não trava
 
-  // Regras de senha (igual teu Supabase)
+  useEffect(() => {
+    // comenta depois
+    console.log("TURNSTILE siteKey:", siteKey ? "OK" : "EMPTY");
+    console.log("HOST:", window.location.host);
+  }, [siteKey]);
+
+  useEffect(() => {
+    setCaptchaToken("");
+    setCaptchaError("");
+    setCaptchaBroken(false);
+  }, [mode]);
+
   const MIN_PASSWORD_LEN = 8;
 
   function getPasswordIssues(pw) {
@@ -44,6 +56,30 @@ export default function Login() {
     [mode, password]
   );
 
+  // helper: lê role do profiles (getUser correto)
+  async function getMyRole() {
+    const { data } = await supabase.auth.getUser();
+    const user = data?.user;
+    if (!user) return "client";
+
+    const { data: prof, error } = await supabase
+      .from("profiles")
+      .select("role")
+      .eq("id", user.id)
+      .single();
+
+    if (error) return "client";
+    return String(prof?.role || "client").toLowerCase();
+  }
+
+  async function acceptInviteIfAny() {
+    try {
+      await supabase.rpc("accept_employee_invite_if_exists");
+    } catch {
+      // ignora
+    }
+  }
+
   const canSubmit = useMemo(() => {
     if (!email || !password) return false;
 
@@ -52,35 +88,11 @@ export default function Login() {
       if (passwordIssues.length > 0) return false;
     }
 
-    if (shouldShowCaptcha && !captchaToken) return false;
+    // só exige token se captcha estiver ativo e não estiver quebrado
+    if (shouldShowCaptcha && !captchaBroken && !captchaToken) return false;
 
     return true;
-  }, [email, password, mode, password2, passwordIssues, shouldShowCaptcha, captchaToken]);
-
-  // ✅ helper: lê role do profiles
-  async function getMyRole() {
-    const { data: auth } = await supabase.auth.getUser();
-    const user = auth?.user;
-    if (!user) return "client";
-
-    const { data, error } = await supabase
-      .from("profiles")
-      .select("role")
-      .eq("id", user.id)
-      .single();
-
-    if (error) return "client";
-    return data?.role || "client";
-  }
-
-  // ✅ helper: aceita convite (promove staff/admin) se existir
-  async function acceptInviteIfAny() {
-    try {
-      await supabase.rpc("accept_employee_invite_if_exists");
-    } catch {
-      // se der erro, só ignora (não quebra login)
-    }
-  }
+  }, [email, password, mode, password2, passwordIssues, shouldShowCaptcha, captchaToken, captchaBroken]);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -100,12 +112,7 @@ export default function Login() {
       }
     }
 
-    if (shouldShowCaptcha && !siteKey) {
-      setMsg({ type: "error", text: "Faltou VITE_TURNSTILE_SITE_KEY (ENV)." });
-      return;
-    }
-
-    if (shouldShowCaptcha && !captchaToken) {
+    if (shouldShowCaptcha && !captchaBroken && !captchaToken) {
       setMsg({ type: "error", text: "Confirma o CAPTCHA antes de continuar." });
       return;
     }
@@ -115,11 +122,13 @@ export default function Login() {
     try {
       const cleanEmail = (email || "").trim();
 
-      // ✅ Supabase v2: captchaToken vai dentro de options
       const payload = {
         email: cleanEmail,
         password,
-        options: shouldShowCaptcha ? { captchaToken } : undefined,
+        options:
+          shouldShowCaptcha && !captchaBroken && captchaToken
+            ? { captchaToken }
+            : undefined,
       };
 
       const { data, error } =
@@ -129,10 +138,9 @@ export default function Login() {
 
       if (error) throw error;
 
-      const session =
-        data?.session ?? (await supabase.auth.getSession()).data?.session;
+      const session = data?.session ?? (await supabase.auth.getSession()).data?.session;
 
-      // Se signup exige confirmação de e-mail, pode vir sem sessão
+      // signup com confirmação de e-mail pode vir sem sessão
       if (!session) {
         setMsg({
           type: "success",
@@ -141,14 +149,11 @@ export default function Login() {
               ? "✅ Conta criada! Verifique seu e-mail para confirmar o cadastro."
               : "✅ Logado com sucesso!",
         });
-        if (shouldShowCaptcha) setCaptchaToken("");
+        setCaptchaToken("");
         return;
       }
 
-      // ✅ 1) aceita convite automaticamente (se existir)
       await acceptInviteIfAny();
-
-      // ✅ 2) pega role atualizado
       const role = await getMyRole();
 
       setMsg({
@@ -156,7 +161,6 @@ export default function Login() {
         text: mode === "login" ? "✅ Logado com sucesso!" : "✅ Conta criada!",
       });
 
-      // ✅ 3) redireciona baseado no role
       if (role === "staff" || role === "admin") {
         navigate("/app/dashboard", { replace: true });
       } else {
@@ -167,8 +171,7 @@ export default function Login() {
         type: "error",
         text: err?.message || "Falha no processo de autenticação.",
       });
-
-      if (shouldShowCaptcha) setCaptchaToken("");
+      setCaptchaToken("");
     } finally {
       setLoading(false);
     }
@@ -188,8 +191,7 @@ export default function Login() {
       return;
     }
 
-    // ✅ se captcha tá ligado no Supabase, recovery também precisa token
-    if (shouldShowCaptcha && !captchaToken) {
+    if (shouldShowCaptcha && !captchaBroken && !captchaToken) {
       setMsg({ type: "error", text: "Confirma o CAPTCHA antes de recuperar a senha." });
       return;
     }
@@ -197,7 +199,6 @@ export default function Login() {
     setLoading(true);
 
     try {
-      // ✅ redirect correto (domínio atual em prod / eletrobess.com no localhost)
       const base =
         window.location.hostname === "localhost"
           ? "https://eletrobess.com"
@@ -207,7 +208,7 @@ export default function Login() {
 
       const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
         redirectTo,
-        ...(shouldShowCaptcha ? { captchaToken } : {}),
+        ...(shouldShowCaptcha && !captchaBroken && captchaToken ? { captchaToken } : {}),
       });
 
       if (error) throw error;
@@ -217,13 +218,13 @@ export default function Login() {
         text: "✅ E-mail enviado! Abre sua caixa de entrada e clica no link para redefinir a senha.",
       });
 
-      if (shouldShowCaptcha) setCaptchaToken("");
+      setCaptchaToken("");
     } catch (err) {
       setMsg({
         type: "error",
         text: err?.message || "Não foi possível enviar o e-mail de recuperação.",
       });
-      if (shouldShowCaptcha) setCaptchaToken("");
+      setCaptchaToken("");
     } finally {
       setLoading(false);
     }
@@ -380,11 +381,12 @@ export default function Login() {
               </div>
             )}
 
+            {/* CAPTCHA só aparece se tiver siteKey */}
             {shouldShowCaptcha && (
               <div className="field" style={{ marginTop: 10 }}>
-                {!siteKey ? (
+                {captchaBroken ? (
                   <div className="alert alert-error">
-                    Faltou configurar <b>VITE_TURNSTILE_SITE_KEY</b>.
+                    CAPTCHA falhou ao carregar neste dispositivo. Você pode tentar continuar sem ele.
                   </div>
                 ) : (
                   <>
@@ -400,13 +402,28 @@ export default function Login() {
                       onError={() => {
                         setCaptchaToken("");
                         setCaptchaError("Erro ao carregar o CAPTCHA.");
+                        setCaptchaBroken(true);
                       }}
                     />
+
                     {captchaError && (
                       <div className="alert alert-error" style={{ marginTop: 8 }}>
                         {captchaError}
                       </div>
                     )}
+
+                    <button
+                      type="button"
+                      className="btn-secondary"
+                      style={{ marginTop: 10 }}
+                      onClick={() => {
+                        setCaptchaToken("");
+                        setCaptchaError("");
+                        setCaptchaBroken(false);
+                      }}
+                    >
+                      Recarregar CAPTCHA
+                    </button>
                   </>
                 )}
               </div>
@@ -456,6 +473,7 @@ export default function Login() {
                 setMsg({ type: "", text: "" });
                 setCaptchaToken("");
                 setCaptchaError("");
+                setCaptchaBroken(false);
                 setPassword("");
                 setPassword2("");
                 setShowPassword(false);
