@@ -11,6 +11,65 @@ function uid() {
   }
 }
 
+/**
+ * ✅ Corrige o bug do "consumo mensal" ao EDITAR:
+ * - Se vier string JSON do banco, converte pra objeto
+ * - Garante todos os meses (jan..dez)
+ */
+function normalizeConsumoMensal(v) {
+  const base = {
+    jan: "",
+    fev: "",
+    mar: "",
+    abr: "",
+    mai: "",
+    jun: "",
+    jul: "",
+    ago: "",
+    set: "",
+    out: "",
+    nov: "",
+    dez: "",
+  };
+
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    return { ...base, ...v };
+  }
+
+  if (typeof v === "string") {
+    try {
+      const parsed = JSON.parse(v);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return { ...base, ...parsed };
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  return base;
+}
+
+/**
+ * ✅ Corrige "financeiro não salva" em muitos casos:
+ * - Se JSONB vier como string, converte
+ * - Garante array
+ */
+function normalizeJsonArray(v, fallback) {
+  if (Array.isArray(v)) return v;
+
+  if (typeof v === "string") {
+    try {
+      const parsed = JSON.parse(v);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      // ignore
+    }
+  }
+
+  return fallback;
+}
+
 function normalizeClient(c) {
   const safe = c || {};
   return {
@@ -33,20 +92,8 @@ function normalizeClient(c) {
     city: safe.city ?? "",
     state: safe.state ?? "",
 
-    ufv_consumo_mensal: safe.ufv_consumo_mensal ?? {
-      jan: "",
-      fev: "",
-      mar: "",
-      abr: "",
-      mai: "",
-      jun: "",
-      jul: "",
-      ago: "",
-      set: "",
-      out: "",
-      nov: "",
-      dez: "",
-    },
+    // ✅ AQUI: se vier string, parseia. Se faltar mês, completa.
+    ufv_consumo_mensal: normalizeConsumoMensal(safe.ufv_consumo_mensal),
 
     ufv_potencia_kwp: safe.ufv_potencia_kwp ?? "",
     ufv_irradiacao: safe.ufv_irradiacao ?? "",
@@ -55,18 +102,16 @@ function normalizeClient(c) {
     ufv_inversores: safe.ufv_inversores ?? "",
     ufv_modulos: safe.ufv_modulos ?? "",
 
-    // JSONB (arrays)
-    financeiro_custos: Array.isArray(safe.financeiro_custos)
-      ? safe.financeiro_custos
-      : [
-          { id: uid(), tipo: "Equipamentos", valor: "" },
-          { id: uid(), tipo: "Serviços", valor: "" },
-          { id: uid(), tipo: "Engenharia", valor: "" },
-        ],
+    // ✅ arrays JSONB (se vierem string também corrige)
+    financeiro_custos: normalizeJsonArray(safe.financeiro_custos, [
+      { id: uid(), tipo: "Equipamentos", valor: "" },
+      { id: uid(), tipo: "Serviços", valor: "" },
+      { id: uid(), tipo: "Engenharia", valor: "" },
+    ]),
 
-    financeiro_pagamentos: Array.isArray(safe.financeiro_pagamentos)
-      ? safe.financeiro_pagamentos
-      : [{ id: uid(), forma: "PIX", pct: 0 }],
+    financeiro_pagamentos: normalizeJsonArray(safe.financeiro_pagamentos, [
+      { id: uid(), forma: "PIX", pct: 0 },
+    ]),
   };
 }
 
@@ -86,9 +131,15 @@ function getEconomiaCliente(c) {
   const kwp = Number(c?.ufv_potencia_kwp || 0);
   if (!kwp) return 0;
 
-  const f = Number(c.financeiro_custos?.find((x) => x.tipo === "Equipamentos")?.valor || 0);
-  const s = Number(c.financeiro_custos?.find((x) => x.tipo === "Serviços")?.valor || 0);
-  const e = Number(c.financeiro_custos?.find((x) => x.tipo === "Engenharia")?.valor || 0);
+  const f = Number(
+    c.financeiro_custos?.find((x) => x.tipo === "Equipamentos")?.valor || 0
+  );
+  const s = Number(
+    c.financeiro_custos?.find((x) => x.tipo === "Serviços")?.valor || 0
+  );
+  const e = Number(
+    c.financeiro_custos?.find((x) => x.tipo === "Engenharia")?.valor || 0
+  );
 
   const totalPorKwp = f / kwp + s / kwp + e / kwp;
   return totalPorKwp * kwp;
@@ -99,22 +150,26 @@ function sumEconomia(list) {
 }
 
 function avgConsumo(list) {
-  const arr = (list || []).map(getConsumoMedioCliente).filter((n) => n > 0);
+  const arr = (list || [])
+    .map(getConsumoMedioCliente)
+    .filter((n) => n > 0);
   if (arr.length === 0) return 0;
   return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 
 /**
- * ✅ IMPORTANTE (o que eu arrumei aqui):
- * - NÃO manda `id` no INSERT/UPDATE (deixa o banco/supabase gerar o UUID)
- * - No UPDATE não manda `created_by` (isso evita bagunça)
- * - Garante que JSONB (ufv_consumo_mensal / financeiro_custos / financeiro_pagamentos) vão sempre como objeto/array
- * - Se o Financeiro não tava salvando, era geralmente porque o payload tava indo com coisa errada (ou id)
+ * ✅ IMPORTANTE (arrumado aqui):
+ * - Garante json/arrays SEMPRE no formato certo antes de salvar
+ * - NÃO manda `id` no INSERT/UPDATE (deixa o banco gerar)
+ * - No UPDATE não manda `created_by`
  */
 export default function Clients() {
   const navigate = useNavigate();
 
-  const initialFormState = useMemo(() => normalizeClient({ status: "ENTRADA" }), []);
+  const initialFormState = useMemo(
+    () => normalizeClient({ status: "ENTRADA" }),
+    []
+  );
 
   const [clients, setClients] = useState([]);
   const [formData, setFormData] = useState(initialFormState);
@@ -182,11 +237,19 @@ export default function Clients() {
 
   // UFV - CONSUMO
   const consumoValores = useMemo(() => {
-    return Object.values(formData.ufv_consumo_mensal || {}).map((v) => Number(v) || 0);
+    return Object.values(formData.ufv_consumo_mensal || {}).map(
+      (v) => Number(v) || 0
+    );
   }, [formData.ufv_consumo_mensal]);
 
-  const consumoAnual = useMemo(() => consumoValores.reduce((a, b) => a + b, 0), [consumoValores]);
-  const consumoMedio = useMemo(() => (consumoAnual / 12).toFixed(2), [consumoAnual]);
+  const consumoAnual = useMemo(
+    () => consumoValores.reduce((a, b) => a + b, 0),
+    [consumoValores]
+  );
+  const consumoMedio = useMemo(
+    () => (consumoAnual / 12).toFixed(2),
+    [consumoAnual]
+  );
 
   // UFV - GERAÇÃO
   const kwp = Number(formData.ufv_potencia_kwp || 0);
@@ -196,9 +259,12 @@ export default function Clients() {
 
   // FINANCEIRO
   const custoFornecedor = Number(
-    formData.financeiro_custos.find((c) => c.tipo === "Equipamentos")?.valor || 0
+    formData.financeiro_custos.find((c) => c.tipo === "Equipamentos")?.valor ||
+      0
   );
-  const custoServico = Number(formData.financeiro_custos.find((c) => c.tipo === "Serviços")?.valor || 0);
+  const custoServico = Number(
+    formData.financeiro_custos.find((c) => c.tipo === "Serviços")?.valor || 0
+  );
   const custoEngenharia = Number(
     formData.financeiro_custos.find((c) => c.tipo === "Engenharia")?.valor || 0
   );
@@ -236,20 +302,23 @@ export default function Clients() {
     setIsFormOpen(true);
   };
 
-  // ✅ PAYLOAD LIMPO (salva tudo, inclusive financeiro)
+  // ✅ PAYLOAD LIMPO (sempre salva json certo)
   const buildPayloadForDb = (fd) => {
-    // remove o id do payload (IMPORTANTE: não mandar id fake no insert/update)
-    // e também remove qualquer coisa que não exista na tabela.
-    const {
-      id: _ignoreId,
-      ...rest
-    } = fd || {};
+    const { id: _ignoreId, ...rest } = fd || {};
 
     return {
       ...rest,
-      ufv_consumo_mensal: fd.ufv_consumo_mensal || {},
-      financeiro_custos: Array.isArray(fd.financeiro_custos) ? fd.financeiro_custos : [],
-      financeiro_pagamentos: Array.isArray(fd.financeiro_pagamentos) ? fd.financeiro_pagamentos : [],
+
+      // ✅ garante objeto (não string)
+      ufv_consumo_mensal: normalizeConsumoMensal(fd.ufv_consumo_mensal),
+
+      // ✅ garante arrays
+      financeiro_custos: Array.isArray(fd.financeiro_custos)
+        ? fd.financeiro_custos
+        : [],
+      financeiro_pagamentos: Array.isArray(fd.financeiro_pagamentos)
+        ? fd.financeiro_pagamentos
+        : [],
     };
   };
 
@@ -266,12 +335,9 @@ export default function Clients() {
     const userId = authData?.user?.id || null;
 
     const payload = buildPayloadForDb(formData);
-
-    // Debug (se não salvar, olha aqui o payload)
     console.log("✅ SAVE PAYLOAD =>", payload);
 
     if (editingClientId) {
-      // UPDATE: não manda created_by (só quem criou)
       const { created_by, ...updatePayload } = payload;
 
       const { error } = await supabase
@@ -286,7 +352,6 @@ export default function Clients() {
       }
       alert("Cliente atualizado!");
     } else {
-      // INSERT: created_by entra só aqui
       const insertPayload = { ...payload, created_by: userId };
 
       const { error } = await supabase.from("clients").insert(insertPayload);
@@ -306,14 +371,18 @@ export default function Clients() {
     await loadClients();
   };
 
-  // ✅ DELETE DEFINITIVO (sem reload + mostra erro real)
+  // ✅ DELETE
   const handleDelete = async (id) => {
     setErrMsg("");
 
     try {
       console.log("🗑 Tentando excluir client id:", id);
 
-      const { data, error } = await supabase.from("clients").delete().eq("id", id).select("id");
+      const { data, error } = await supabase
+        .from("clients")
+        .delete()
+        .eq("id", id)
+        .select("id");
 
       if (error) {
         console.error("❌ DELETE ERROR:", error);
@@ -351,11 +420,20 @@ export default function Clients() {
     return (clients || []).filter((c) => {
       const matchQ =
         !qq ||
-        [c?.name, c?.email, c?.contact_number, c?.document, c?.origin, c?.city, c?.state]
+        [
+          c?.name,
+          c?.email,
+          c?.contact_number,
+          c?.document,
+          c?.origin,
+          c?.city,
+          c?.state,
+        ]
           .filter(Boolean)
           .some((v) => String(v).toLowerCase().includes(qq));
 
-      const matchStatus = fStatus === "all" || (c?.status || "ENTRADA") === fStatus;
+      const matchStatus =
+        fStatus === "all" || (c?.status || "ENTRADA") === fStatus;
       const matchType = fType === "all" || (c?.type || "") === fType;
       const matchOrigin = fOrigin === "all" || (c?.origin || "") === fOrigin;
 
@@ -363,13 +441,13 @@ export default function Clients() {
     });
   }, [clients, q, fStatus, fType, fOrigin]);
 
-  const economiaTotal = useMemo(() => sumEconomia(filtered), [filtered]); // (não usado, mas deixei)
-  const consumoMedioLista = useMemo(() => avgConsumo(filtered), [filtered]); // (não usado, mas deixei)
+  // (não usados no layout, mas deixei)
+  const economiaTotal = useMemo(() => sumEconomia(filtered), [filtered]);
+  const consumoMedioLista = useMemo(() => avgConsumo(filtered), [filtered]);
 
   return (
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto w-full max-w-6xl px-6 py-6">
-        {/* Header */}
         <div className="pageHeader2">
           <div>
             <h1 className="pageTitle2">Clientes</h1>
@@ -380,9 +458,6 @@ export default function Clients() {
             <button className="btn primary" type="button" onClick={openNew}>
               + Novo Cliente
             </button>
-            {/* Se quiser o sair aqui também:
-            <button className="btn ghost" type="button" onClick={handleLogout}>Sair</button>
-            */}
           </div>
         </div>
 
@@ -392,12 +467,10 @@ export default function Clients() {
           </div>
         ) : null}
 
-        {/* KPIs */}
         <div className="kpiGrid2">
           <KpiCard icon="👥" title="Total de Clientes" value={filtered.length} />
         </div>
 
-        {/* Busca + filtros */}
         <div className="searchBar2">
           <div className="searchInputWrap2">
             <span className="searchIcon2">🔎</span>
@@ -409,7 +482,11 @@ export default function Clients() {
             />
           </div>
 
-          <select className="select2" value={fType} onChange={(e) => setFType(e.target.value)}>
+          <select
+            className="select2"
+            value={fType}
+            onChange={(e) => setFType(e.target.value)}
+          >
             <option value="all">Todos os tipos</option>
             <option value="RESIDENCIAL">Residencial</option>
             <option value="COMERCIAL">Comercial</option>
@@ -417,7 +494,11 @@ export default function Clients() {
             <option value="RURAL">Rural</option>
           </select>
 
-          <select className="select2" value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
+          <select
+            className="select2"
+            value={fStatus}
+            onChange={(e) => setFStatus(e.target.value)}
+          >
             <option value="all">Todos os status</option>
             <option value="ENTRADA">Entrada</option>
             <option value="FECHADO">Fechado</option>
@@ -425,11 +506,12 @@ export default function Clients() {
           </select>
         </div>
 
-        {/* Lista */}
         <div className="tableCard2">
           <div className="tableHead2">
             <div className="tableTitle2">Clientes</div>
-            <div className="tableMeta2">{loading ? "Carregando..." : `${filtered.length} resultado(s)`}</div>
+            <div className="tableMeta2">
+              {loading ? "Carregando..." : `${filtered.length} resultado(s)`}
+            </div>
           </div>
 
           <div className="p-4">
@@ -450,7 +532,9 @@ export default function Clients() {
                     <div key={c.id} className="clientCard2">
                       <div className="clientTop2">
                         <div className="clientLeft2">
-                          <div className="avatar2">{(c.name || "C")[0]?.toUpperCase()}</div>
+                          <div className="avatar2">
+                            {(c.name || "C")[0]?.toUpperCase()}
+                          </div>
 
                           <div className="clientText2">
                             <div className="clientName2">{c.name || "-"}</div>
@@ -470,8 +554,12 @@ export default function Clients() {
                           {c.state ? `, ${c.state}` : ""}
                         </div>
                         <div className="chip2">{c.service_category || "—"}</div>
-                        <div className="chip2">{consumo ? `${consumo.toFixed(0)} kWh` : "—"}</div>
-                        <div className="clientTotal2">{total ? formatBRL(total) : "—"}</div>
+                        <div className="chip2">
+                          {consumo ? `${consumo.toFixed(0)} kWh` : "—"}
+                        </div>
+                        <div className="clientTotal2">
+                          {total ? formatBRL(total) : "—"}
+                        </div>
                       </div>
 
                       <div className="clientActions2">
@@ -509,11 +597,11 @@ export default function Clients() {
           </div>
 
           <div className="border-t px-4 py-3 text-xs text-muted-foreground">
-            Dica: use os filtros pra priorizar follow-up e organizar funil comercial.
+            Dica: use os filtros pra priorizar follow-up e organizar funil
+            comercial.
           </div>
         </div>
 
-        {/* MODAL */}
         {isFormOpen && (
           <div style={modalOverlay}>
             <div style={modalCard}>
@@ -557,7 +645,9 @@ export default function Clients() {
                   </button>
                   <button
                     type="button"
-                    className={"tab " + (activeTab === "endereco" ? "active" : "")}
+                    className={
+                      "tab " + (activeTab === "endereco" ? "active" : "")
+                    }
                     onClick={() => setActiveTab("endereco")}
                   >
                     Endereço
@@ -574,7 +664,10 @@ export default function Clients() {
                   {formData.service_category && (
                     <button
                       type="button"
-                      className={"tab " + (activeTab === "financeiro" ? "active" : "")}
+                      className={
+                        "tab " +
+                        (activeTab === "financeiro" ? "active" : "")
+                      }
                       onClick={() => setActiveTab("financeiro")}
                     >
                       Financeiro
@@ -607,7 +700,11 @@ export default function Clients() {
                       onChange={(v) => setField("document", v)}
                     />
 
-                    <InputField label="E-mail" value={formData.email} onChange={(v) => setField("email", v)} />
+                    <InputField
+                      label="E-mail"
+                      value={formData.email}
+                      onChange={(v) => setField("email", v)}
+                    />
                     <InputField
                       label="Telefone"
                       value={formData.contact_number}
@@ -684,15 +781,31 @@ export default function Clients() {
                         fetchAddressByCep(v);
                       }}
                     />
-                    <InputField label="Endereço" value={formData.address} onChange={(v) => setField("address", v)} />
-                    <InputField label="Número" value={formData.house_number} onChange={(v) => setField("house_number", v)} />
+                    <InputField
+                      label="Endereço"
+                      value={formData.address}
+                      onChange={(v) => setField("address", v)}
+                    />
+                    <InputField
+                      label="Número"
+                      value={formData.house_number}
+                      onChange={(v) => setField("house_number", v)}
+                    />
                     <InputField
                       label="Bairro"
                       value={formData.neighborhood}
                       onChange={(v) => setField("neighborhood", v)}
                     />
-                    <InputField label="Cidade" value={formData.city} onChange={(v) => setField("city", v)} />
-                    <InputField label="Estado" value={formData.state} onChange={(v) => setField("state", v)} />
+                    <InputField
+                      label="Cidade"
+                      value={formData.city}
+                      onChange={(v) => setField("city", v)}
+                    />
+                    <InputField
+                      label="Estado"
+                      value={formData.state}
+                      onChange={(v) => setField("state", v)}
+                    />
                   </div>
                 )}
 
@@ -742,45 +855,69 @@ export default function Clients() {
                           <label className="label">Consumo Mensal (kWh)</label>
 
                           <div className="grid3">
-                            {Object.entries(formData.ufv_consumo_mensal).map(([mes, val]) => (
-                              <div key={mes} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            {Object.entries(formData.ufv_consumo_mensal).map(
+                              ([mes, val]) => (
                                 <div
+                                  key={mes}
                                   style={{
-                                    fontSize: 12,
-                                    fontWeight: 700,
-                                    letterSpacing: 0.6,
-                                    opacity: 0.85,
-                                    textTransform: "uppercase",
-                                    paddingLeft: 2,
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    gap: 6,
                                   }}
                                 >
-                                  {mes.toUpperCase()}
-                                </div>
+                                  <div
+                                    style={{
+                                      fontSize: 12,
+                                      fontWeight: 700,
+                                      letterSpacing: 0.6,
+                                      opacity: 0.85,
+                                      textTransform: "uppercase",
+                                      paddingLeft: 2,
+                                    }}
+                                  >
+                                    {mes.toUpperCase()}
+                                  </div>
 
-                                <input
-                                  className="input"
-                                  inputMode="numeric"
-                                  placeholder="0"
-                                  value={val}
-                                  onChange={(e) =>
-                                    setFormData((p) => ({
-                                      ...p,
-                                      ufv_consumo_mensal: {
-                                        ...p.ufv_consumo_mensal,
-                                        [mes]: e.target.value.replace(/[^\d]/g, ""),
-                                      },
-                                    }))
-                                  }
-                                />
-                              </div>
-                            ))}
+                                  <input
+                                    className="input"
+                                    inputMode="numeric"
+                                    placeholder="0"
+                                    value={val}
+                                    onChange={(e) =>
+                                      setFormData((p) => ({
+                                        ...p,
+                                        ufv_consumo_mensal: {
+                                          ...p.ufv_consumo_mensal,
+                                          [mes]: e.target.value.replace(
+                                            /[^\d]/g,
+                                            ""
+                                          ),
+                                        },
+                                      }))
+                                    }
+                                  />
+                                </div>
+                              )
+                            )}
                           </div>
                         </div>
 
-                        <ReadOnlyField label="Consumo Anual (kWh)" value={String(consumoAnual)} />
-                        <ReadOnlyField label="Média Mensal (kWh)" value={String(consumoMedio)} />
-                        <ReadOnlyField label="Geração Mensal Estimada (kWh)" value={String(geracaoMensal.toFixed(2))} />
-                        <ReadOnlyField label="Geração Anual Estimada (kWh)" value={String(geracaoAnual.toFixed(2))} />
+                        <ReadOnlyField
+                          label="Consumo Anual (kWh)"
+                          value={String(consumoAnual)}
+                        />
+                        <ReadOnlyField
+                          label="Média Mensal (kWh)"
+                          value={String(consumoMedio)}
+                        />
+                        <ReadOnlyField
+                          label="Geração Mensal Estimada (kWh)"
+                          value={String(geracaoMensal.toFixed(2))}
+                        />
+                        <ReadOnlyField
+                          label="Geração Anual Estimada (kWh)"
+                          value={String(geracaoAnual.toFixed(2))}
+                        />
                       </>
                     ) : (
                       <div className="full" style={{ color: "#64748b" }}>
@@ -801,8 +938,11 @@ export default function Clients() {
                             onChange={(e) =>
                               setFormData((p) => ({
                                 ...p,
-                                financeiro_custos: p.financeiro_custos.map((it) =>
-                                  it.id === c.id ? { ...it, tipo: e.target.value } : it
+                                financeiro_custos: p.financeiro_custos.map(
+                                  (it) =>
+                                    it.id === c.id
+                                      ? { ...it, tipo: e.target.value }
+                                      : it
                                 ),
                               }))
                             }
@@ -815,8 +955,11 @@ export default function Clients() {
                             onChange={(e) =>
                               setFormData((p) => ({
                                 ...p,
-                                financeiro_custos: p.financeiro_custos.map((it) =>
-                                  it.id === c.id ? { ...it, valor: e.target.value } : it
+                                financeiro_custos: p.financeiro_custos.map(
+                                  (it) =>
+                                    it.id === c.id
+                                      ? { ...it, valor: e.target.value }
+                                      : it
                                 ),
                               }))
                             }
@@ -827,7 +970,9 @@ export default function Clients() {
                             onClick={() =>
                               setFormData((p) => ({
                                 ...p,
-                                financeiro_custos: p.financeiro_custos.filter((it) => it.id !== c.id),
+                                financeiro_custos: p.financeiro_custos.filter(
+                                  (it) => it.id !== c.id
+                                ),
                               }))
                             }
                           >
@@ -842,7 +987,10 @@ export default function Clients() {
                         onClick={() =>
                           setFormData((p) => ({
                             ...p,
-                            financeiro_custos: [...p.financeiro_custos, { id: uid(), tipo: "", valor: "" }],
+                            financeiro_custos: [
+                              ...p.financeiro_custos,
+                              { id: uid(), tipo: "", valor: "" },
+                            ],
                           }))
                         }
                       >
@@ -896,7 +1044,9 @@ export default function Clients() {
                                   setFormData((prev) => ({
                                     ...prev,
                                     financeiro_pagamentos: pagamentos.map((x) =>
-                                      x.id === p.id ? { ...x, forma: e.target.value } : x
+                                      x.id === p.id
+                                        ? { ...x, forma: e.target.value }
+                                        : x
                                     ),
                                   }))
                                 }
@@ -917,7 +1067,9 @@ export default function Clients() {
                                   setFormData((prev) => ({
                                     ...prev,
                                     financeiro_pagamentos: pagamentos.map((x) =>
-                                      x.id === p.id ? { ...x, pct: e.target.value } : x
+                                      x.id === p.id
+                                        ? { ...x, pct: e.target.value }
+                                        : x
                                     ),
                                   }))
                                 }
@@ -926,7 +1078,11 @@ export default function Clients() {
 
                             <div>
                               <label className="label">Valor (R$)</label>
-                              <input className="input" value={p.valor.toFixed(2)} readOnly />
+                              <input
+                                className="input"
+                                value={p.valor.toFixed(2)}
+                                readOnly
+                              />
                             </div>
 
                             <div className="payDel">
@@ -936,7 +1092,9 @@ export default function Clients() {
                                 onClick={() =>
                                   setFormData((prev) => ({
                                     ...prev,
-                                    financeiro_pagamentos: pagamentos.filter((x) => x.id !== p.id),
+                                    financeiro_pagamentos: pagamentos.filter(
+                                      (x) => x.id !== p.id
+                                    ),
                                   }))
                                 }
                               >
@@ -953,14 +1111,21 @@ export default function Clients() {
                         onClick={() =>
                           setFormData((p) => ({
                             ...p,
-                            financeiro_pagamentos: [...p.financeiro_pagamentos, { id: uid(), forma: "PIX", pct: 0 }],
+                            financeiro_pagamentos: [
+                              ...p.financeiro_pagamentos,
+                              { id: uid(), forma: "PIX", pct: 0 },
+                            ],
                           }))
                         }
                       >
                         + Adicionar forma
                       </button>
 
-                      {!pctOk && <div className="warn">As porcentagens precisam fechar em 100%.</div>}
+                      {!pctOk && (
+                        <div className="warn">
+                          As porcentagens precisam fechar em 100%.
+                        </div>
+                      )}
                     </Section>
                   </div>
                 )}
@@ -1010,7 +1175,12 @@ function InputField({ label, value, onChange, type = "text" }) {
   return (
     <div>
       <label className="label">{label}</label>
-      <input className="input" type={type} value={value || ""} onChange={(e) => onChange(e.target.value)} />
+      <input
+        className="input"
+        type={type}
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+      />
     </div>
   );
 }
@@ -1028,7 +1198,11 @@ function SelectField({ label, value, onChange, options }) {
   return (
     <div>
       <label className="label">{label}</label>
-      <select className="input" value={value || ""} onChange={(e) => onChange(e.target.value)}>
+      <select
+        className="input"
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+      >
         <option value="">Selecione</option>
         {options.map((o) => (
           <option key={o.value} value={o.value}>
