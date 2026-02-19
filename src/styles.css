@@ -2204,3 +2204,23 @@ select.input {
 .logout-btn:hover {
   background: #15803d;
 }
+/* ===== FIX: texto sumindo quando digita ===== */
+.input,
+input,
+select,
+textarea {
+  color: #0f172a !important;          /* texto preto */
+  caret-color: #0f172a !important;    /* cursor preto */
+  background: #fff !important;
+}
+
+.input::placeholder,
+input::placeholder,
+textarea::placeholder {
+  color: rgba(15, 23, 42, .45) !important;
+}
+
+/* se tiver algum wrapper do modal colocando cor branca */
+.modal, .dialog, .card, .content {
+  color: #0f172a;
+}

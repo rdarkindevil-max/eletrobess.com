@@ -145,7 +145,7 @@ export default function ClientPortal() {
 
   const activeProject = useMemo(() => {
     return plantSales.find((s) =>
-      ["in_progress", "installed", "online", "issue"].includes(String(s?.status || ""))
+      ["Em Andamento", "installed", "online", "issue"].includes(String(s?.status || ""))
     );
   }, [plantSales]);
 
