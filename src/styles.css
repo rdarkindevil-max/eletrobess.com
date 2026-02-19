@@ -2188,3 +2188,19 @@ select.input {
   display: block;
   object-fit: contain;
 }
+/* ===== BOTÃO SAIR ===== */
+.logout-btn,
+.topRight .logout-btn,
+.topRight button.logout-btn {
+  background: #16a34a;     /* verde principal */
+  color: #ffffff !important;  /* texto branco FORÇADO */
+  border: none;
+  font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 14px;
+  cursor: pointer;
+}
+
+.logout-btn:hover {
+  background: #15803d;
+}
