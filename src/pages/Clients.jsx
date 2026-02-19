@@ -12,9 +12,9 @@ function uid() {
 }
 
 /**
- * ✅ Corrige o bug do "consumo mensal" ao EDITAR:
- * - Se vier string JSON do banco, converte pra objeto
- * - Garante todos os meses (jan..dez)
+ * ✅ Consumo mensal:
+ * - se vier string JSON, parseia
+ * - garante jan..dez
  */
 function normalizeConsumoMensal(v) {
   const base = {
@@ -37,9 +37,7 @@ function normalizeConsumoMensal(v) {
   if (typeof v === "string") {
     try {
       const parsed = JSON.parse(v);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return { ...base, ...parsed };
-      }
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return { ...base, ...parsed };
     } catch {}
   }
 
@@ -47,39 +45,43 @@ function normalizeConsumoMensal(v) {
 }
 
 /**
- * ✅ Corrige JSONB array:
- * - Se vier string JSON do banco, converte
- * - Garante array
+ * ✅ JSONB array:
+ * - se vier string, parseia
+ * - garante array
  */
 function normalizeJsonArray(v, fallback) {
   if (Array.isArray(v)) return v;
-
   if (typeof v === "string") {
     try {
       const parsed = JSON.parse(v);
       if (Array.isArray(parsed)) return parsed;
     } catch {}
   }
-
   return fallback;
 }
 
 /**
- * ✅ Rateio dados (jsonb):
- * - Se vier string, parse
- * - Garante shape
+ * ✅ Rateio item:
  */
-function normalizeRateioDados(v) {
+function normalizeRateioItem(v) {
   const base = {
+    id: uid(),
     numero_cliente: "",
     cpf: "",
     pct: "",
     endereco_geradora: "",
     docs: [], // urls
+    docs_files: [], // files novos (não vai pro banco)
   };
 
   if (v && typeof v === "object" && !Array.isArray(v)) {
-    return { ...base, ...v, docs: Array.isArray(v.docs) ? v.docs : [] };
+    return {
+      ...base,
+      ...v,
+      id: v.id || uid(),
+      docs: Array.isArray(v.docs) ? v.docs : [],
+      docs_files: [],
+    };
   }
 
   if (typeof v === "string") {
@@ -89,7 +91,9 @@ function normalizeRateioDados(v) {
         return {
           ...base,
           ...parsed,
+          id: parsed.id || uid(),
           docs: Array.isArray(parsed.docs) ? parsed.docs : [],
+          docs_files: [],
         };
       }
     } catch {}
@@ -98,28 +102,27 @@ function normalizeRateioDados(v) {
   return base;
 }
 
+function newRateioItem() {
+  return normalizeRateioItem({});
+}
+
 /**
- * ✅ Upload docs do Rateio para Supabase Storage:
- * - bucket: client-docs
- * - path: rateio/<clientId>/timestamp-rand.ext
- * - retorna array de URLs públicas
+ * ✅ Upload docs por rateio (cada rateio vai numa pasta):
+ * bucket: client-docs
+ * path: rateio/<clientId>/<rateioId>/<timestamp>-rand.ext
+ * retorna array de URLs públicas
  */
-async function uploadRateioDocs({ clientId, files }) {
+async function uploadRateioDocs({ clientId, rateioId, files }) {
   const list = Array.isArray(files) ? files : [];
-  if (!clientId || list.length === 0) return [];
+  if (!clientId || !rateioId || list.length === 0) return [];
 
   const uploaded = [];
 
   for (const file of list) {
     const ext = (file?.name || "").split(".").pop() || "bin";
-    const path = `rateio/${clientId}/${Date.now()}-${Math.random()
-      .toString(16)
-      .slice(2)}.${ext}`;
+    const path = `rateio/${clientId}/${rateioId}/${Date.now()}-${Math.random().toString(16).slice(2)}.${ext}`;
 
-    const { error: upErr } = await supabase.storage
-      .from("client-docs")
-      .upload(path, file, { upsert: false });
-
+    const { error: upErr } = await supabase.storage.from("client-docs").upload(path, file, { upsert: false });
     if (upErr) throw upErr;
 
     const { data } = supabase.storage.from("client-docs").getPublicUrl(path);
@@ -131,6 +134,18 @@ async function uploadRateioDocs({ clientId, files }) {
 
 function normalizeClient(c) {
   const safe = c || {};
+
+  // compat: se ainda existir service_category antigo, joga pra lista
+  const categories = normalizeJsonArray(safe.service_categories, safe.service_category ? [safe.service_category] : []);
+
+  // compat: se ainda existir ufv_rateio_dados antigo, converte pra lista
+  const legacyRateio =
+    safe.ufv_rateio === "SIM" && safe.ufv_rateio_dados
+      ? [normalizeRateioItem({ ...safe.ufv_rateio_dados, id: uid() })]
+      : [];
+
+  const rateios = normalizeJsonArray(safe.ufv_rateios, legacyRateio).map(normalizeRateioItem);
+
   return {
     id: safe.id ?? uid(),
     status: safe.status ?? "ENTRADA",
@@ -142,7 +157,9 @@ function normalizeClient(c) {
     birth_date: safe.birth_date ?? "",
     origin: safe.origin ?? "",
     observations: safe.observations ?? "",
-    service_category: safe.service_category ?? "",
+
+    // ✅ agora é multi
+    service_categories: categories,
 
     cep: safe.cep ?? "",
     address: safe.address ?? "",
@@ -156,14 +173,15 @@ function normalizeClient(c) {
     ufv_potencia_kwp: safe.ufv_potencia_kwp ?? "",
     ufv_irradiacao: safe.ufv_irradiacao ?? "",
     ufv_roof_type: safe.ufv_roof_type ?? "",
+
+    // ✅ SIM/NÃO continua
     ufv_rateio: safe.ufv_rateio ?? "",
+
+    // ✅ multi rateios
+    ufv_rateios: rateios,
+
     ufv_inversores: safe.ufv_inversores ?? "",
     ufv_modulos: safe.ufv_modulos ?? "",
-
-    // ✅ rateio dados (jsonb)
-    ufv_rateio_dados: normalizeRateioDados(safe.ufv_rateio_dados),
-    // ✅ arquivos novos (não vai pro banco)
-    ufv_rateio_docs_files: [],
 
     financeiro_custos: normalizeJsonArray(safe.financeiro_custos, [
       { id: uid(), tipo: "Equipamentos", valor: "" },
@@ -171,9 +189,7 @@ function normalizeClient(c) {
       { id: uid(), tipo: "Engenharia", valor: "" },
     ]),
 
-    financeiro_pagamentos: normalizeJsonArray(safe.financeiro_pagamentos, [
-      { id: uid(), forma: "PIX", pct: 0 },
-    ]),
+    financeiro_pagamentos: normalizeJsonArray(safe.financeiro_pagamentos, [{ id: uid(), forma: "PIX", pct: 0 }]),
   };
 }
 
@@ -193,28 +209,12 @@ function getEconomiaCliente(c) {
   const kwp = Number(c?.ufv_potencia_kwp || 0);
   if (!kwp) return 0;
 
-  const f = Number(
-    c.financeiro_custos?.find((x) => x.tipo === "Equipamentos")?.valor || 0
-  );
-  const s = Number(
-    c.financeiro_custos?.find((x) => x.tipo === "Serviços")?.valor || 0
-  );
-  const e = Number(
-    c.financeiro_custos?.find((x) => x.tipo === "Engenharia")?.valor || 0
-  );
+  const f = Number(c.financeiro_custos?.find((x) => x.tipo === "Equipamentos")?.valor || 0);
+  const s = Number(c.financeiro_custos?.find((x) => x.tipo === "Serviços")?.valor || 0);
+  const e = Number(c.financeiro_custos?.find((x) => x.tipo === "Engenharia")?.valor || 0);
 
   const totalPorKwp = f / kwp + s / kwp + e / kwp;
   return totalPorKwp * kwp;
-}
-
-function sumEconomia(list) {
-  return (list || []).reduce((acc, c) => acc + getEconomiaCliente(c), 0);
-}
-
-function avgConsumo(list) {
-  const arr = (list || []).map(getConsumoMedioCliente).filter((n) => n > 0);
-  if (arr.length === 0) return 0;
-  return arr.reduce((a, b) => a + b, 0) / arr.length;
 }
 
 export default function Clients() {
@@ -231,8 +231,6 @@ export default function Clients() {
   const [q, setQ] = useState("");
   const [fStatus, setFStatus] = useState("all");
   const [fType, setFType] = useState("all");
-  const [fOrigin, setFOrigin] = useState("all");
-
   const [loading, setLoading] = useState(true);
   const [errMsg, setErrMsg] = useState("");
 
@@ -242,10 +240,7 @@ export default function Clients() {
     setErrMsg("");
     setLoading(true);
 
-    const { data, error } = await supabase
-      .from("clients")
-      .select("*")
-      .order("created_at", { ascending: false });
+    const { data, error } = await supabase.from("clients").select("*").order("created_at", { ascending: false });
 
     if (error) {
       setErrMsg(error.message);
@@ -282,10 +277,10 @@ export default function Clients() {
   };
 
   // UFV - CONSUMO
-  const consumoValores = useMemo(() => {
-    return Object.values(formData.ufv_consumo_mensal || {}).map((v) => Number(v) || 0);
-  }, [formData.ufv_consumo_mensal]);
-
+  const consumoValores = useMemo(
+    () => Object.values(formData.ufv_consumo_mensal || {}).map((v) => Number(v) || 0),
+    [formData.ufv_consumo_mensal]
+  );
   const consumoAnual = useMemo(() => consumoValores.reduce((a, b) => a + b, 0), [consumoValores]);
   const consumoMedio = useMemo(() => (consumoAnual / 12).toFixed(2), [consumoAnual]);
 
@@ -296,15 +291,9 @@ export default function Clients() {
   const geracaoAnual = geracaoMensal * 12;
 
   // FINANCEIRO
-  const custoFornecedor = Number(
-    formData.financeiro_custos.find((c) => c.tipo === "Equipamentos")?.valor || 0
-  );
-  const custoServico = Number(
-    formData.financeiro_custos.find((c) => c.tipo === "Serviços")?.valor || 0
-  );
-  const custoEngenharia = Number(
-    formData.financeiro_custos.find((c) => c.tipo === "Engenharia")?.valor || 0
-  );
+  const custoFornecedor = Number(formData.financeiro_custos.find((c) => c.tipo === "Equipamentos")?.valor || 0);
+  const custoServico = Number(formData.financeiro_custos.find((c) => c.tipo === "Serviços")?.valor || 0);
+  const custoEngenharia = Number(formData.financeiro_custos.find((c) => c.tipo === "Engenharia")?.valor || 0);
 
   const fornecedorPorKwp = kwp > 0 ? custoFornecedor / kwp : 0;
   const servicoPorKwp = kwp > 0 ? custoServico / kwp : 0;
@@ -315,7 +304,6 @@ export default function Clients() {
 
   const pagamentos = formData.financeiro_pagamentos || [];
   const totalPct = pagamentos.reduce((s, p) => s + (Number(p.pct) || 0), 0);
-  const pctRestante = Math.max(0, 100 - totalPct);
   const pctOk = totalPct === 100;
 
   const pagamentosCalculados = pagamentos.map((p) => {
@@ -339,20 +327,27 @@ export default function Clients() {
     setIsFormOpen(true);
   };
 
-  // ✅ PAYLOAD LIMPO (sem files, sem id)
-  const buildPayloadForDb = (fd) => {
-    const { id: _ignoreId, ufv_rateio_docs_files: _ignoreFiles, ...rest } = fd || {};
+  const hasCategory = (formData.service_categories || []).length > 0;
+  const hasUFV = (formData.service_categories || []).includes("UFV");
 
-    const rateioDados = normalizeRateioDados(fd.ufv_rateio_dados);
-    // se não for SIM, zera dados
-    const finalRateioDados = fd.ufv_rateio === "SIM" ? rateioDados : normalizeRateioDados({});
+  // ✅ payload limpo (sem id e sem docs_files)
+  const buildPayloadForDb = (fd) => {
+    const { id: _ignoreId, ...rest } = fd || {};
 
     return {
       ...rest,
+      service_categories: Array.isArray(fd.service_categories) ? fd.service_categories : [],
       ufv_consumo_mensal: normalizeConsumoMensal(fd.ufv_consumo_mensal),
       financeiro_custos: Array.isArray(fd.financeiro_custos) ? fd.financeiro_custos : [],
       financeiro_pagamentos: Array.isArray(fd.financeiro_pagamentos) ? fd.financeiro_pagamentos : [],
-      ufv_rateio_dados: finalRateioDados,
+      ufv_rateios:
+        fd.ufv_rateio === "SIM"
+          ? (Array.isArray(fd.ufv_rateios) ? fd.ufv_rateios : []).map(({ docs_files, ...r }) => ({
+              ...normalizeRateioItem(r),
+              docs_files: undefined,
+              docs: Array.isArray(r.docs) ? r.docs : [],
+            }))
+          : [],
     };
   };
 
@@ -368,91 +363,65 @@ export default function Clients() {
     const { data: authData } = await supabase.auth.getUser();
     const userId = authData?.user?.id || null;
 
-    const payloadBase = buildPayloadForDb(formData);
-
     try {
+      const payloadBase = buildPayloadForDb(formData);
+
+      let clientId = editingClientId;
+
       if (editingClientId) {
-        // UPDATE
         const { created_by, ...updatePayload } = payloadBase;
 
-        // 1) atualiza dados base
-        const { error: upErr } = await supabase
-          .from("clients")
-          .update(updatePayload)
-          .eq("id", editingClientId);
-
+        const { error: upErr } = await supabase.from("clients").update(updatePayload).eq("id", editingClientId);
         if (upErr) throw upErr;
-
-        // 2) se tiver docs novos, sobe e depois atualiza urls
-        if (formData.ufv_rateio === "SIM" && (formData.ufv_rateio_docs_files || []).length > 0) {
-          const newUrls = await uploadRateioDocs({
-            clientId: editingClientId,
-            files: formData.ufv_rateio_docs_files,
-          });
-
-          const oldUrls = Array.isArray(formData.ufv_rateio_dados?.docs)
-            ? formData.ufv_rateio_dados.docs
-            : [];
-
-          const merged = [...oldUrls, ...newUrls];
-
-          const { error: upDocsErr } = await supabase
-            .from("clients")
-            .update({
-              ufv_rateio_dados: {
-                ...normalizeRateioDados(formData.ufv_rateio_dados),
-                docs: merged,
-              },
-            })
-            .eq("id", editingClientId);
-
-          if (upDocsErr) throw upDocsErr;
-        }
-
-        alert("Cliente atualizado!");
       } else {
-        // INSERT (pega id retornado, depois sobe docs e atualiza)
         const insertPayload = { ...payloadBase, created_by: userId };
 
-        const { data: inserted, error: insErr } = await supabase
-          .from("clients")
-          .insert(insertPayload)
-          .select("id")
-          .single();
-
+        const { data: inserted, error: insErr } = await supabase.from("clients").insert(insertPayload).select("id").single();
         if (insErr) throw insErr;
 
-        const newId = inserted?.id;
-
-        // docs do rateio
-        if (newId && formData.ufv_rateio === "SIM" && (formData.ufv_rateio_docs_files || []).length > 0) {
-          const newUrls = await uploadRateioDocs({
-            clientId: newId,
-            files: formData.ufv_rateio_docs_files,
-          });
-
-          const oldUrls = Array.isArray(formData.ufv_rateio_dados?.docs)
-            ? formData.ufv_rateio_dados.docs
-            : [];
-
-          const merged = [...oldUrls, ...newUrls];
-
-          const { error: upDocsErr } = await supabase
-            .from("clients")
-            .update({
-              ufv_rateio_dados: {
-                ...normalizeRateioDados(formData.ufv_rateio_dados),
-                docs: merged,
-              },
-            })
-            .eq("id", newId);
-
-          if (upDocsErr) throw upDocsErr;
-        }
-
-        alert("Cliente adicionado!");
+        clientId = inserted?.id;
       }
 
+      // ✅ upload docs de cada rateio (se SIM)
+      if (clientId && formData.ufv_rateio === "SIM") {
+        const rateios = Array.isArray(formData.ufv_rateios) ? formData.ufv_rateios : [];
+        let changed = false;
+
+        const nextRateios = [];
+
+        for (const r of rateios) {
+          const rr = normalizeRateioItem(r);
+
+          if (Array.isArray(rr.docs_files) && rr.docs_files.length > 0) {
+            const newUrls = await uploadRateioDocs({
+              clientId,
+              rateioId: rr.id,
+              files: rr.docs_files,
+            });
+
+            rr.docs = [...(Array.isArray(rr.docs) ? rr.docs : []), ...newUrls];
+            rr.docs_files = [];
+            changed = true;
+          } else {
+            rr.docs_files = [];
+          }
+
+          nextRateios.push(rr);
+        }
+
+        // se teve upload, atualiza a coluna ufv_rateios
+        if (changed) {
+          const toDb = nextRateios.map(({ docs_files, ...r }) => ({
+            ...r,
+            docs: Array.isArray(r.docs) ? r.docs : [],
+          }));
+
+          const { error: upDocsErr } = await supabase.from("clients").update({ ufv_rateios: toDb }).eq("id", clientId);
+          if (upDocsErr) throw upDocsErr;
+        }
+      }
+
+      alert(editingClientId ? "Cliente atualizado!" : "Cliente adicionado!");
       setFormData(initialFormState);
       setIsFormOpen(false);
       setActiveTab("basico");
@@ -467,23 +436,16 @@ export default function Clients() {
 
   const handleDelete = async (id) => {
     setErrMsg("");
-
     try {
       const { data, error } = await supabase.from("clients").delete().eq("id", id).select("id");
-
-      if (error) {
-        setErrMsg(error.message);
-        alert("Erro ao excluir: " + error.message);
-        return;
-      }
+      if (error) throw error;
 
       if (!data || data.length === 0) {
-        const msg = "Não deletou (retornou vazio). Normalmente é RLS/policy bloqueando OU o id não existe.";
+        const msg = "Não deletou (vazio). Normalmente é RLS/policy bloqueando OU id não existe.";
         setErrMsg(msg);
         alert(msg);
         return;
       }
-
       await loadClients();
     } catch (e) {
       const msg = e?.message || "Erro inesperado ao excluir";
@@ -508,14 +470,10 @@ export default function Clients() {
 
       const matchStatus = fStatus === "all" || (c?.status || "ENTRADA") === fStatus;
       const matchType = fType === "all" || (c?.type || "") === fType;
-      const matchOrigin = fOrigin === "all" || (c?.origin || "") === fOrigin;
 
-      return matchQ && matchStatus && matchType && matchOrigin;
+      return matchQ && matchStatus && matchType;
     });
-  }, [clients, q, fStatus, fType, fOrigin]);
-
-  useMemo(() => sumEconomia(filtered), [filtered]);
-  useMemo(() => avgConsumo(filtered), [filtered]);
+  }, [clients, q, fStatus, fType]);
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -530,6 +488,7 @@ export default function Clients() {
             <button className="btn primary" type="button" onClick={openNew}>
               + Novo Cliente
             </button>
+            {/* <button className="btn ghost" type="button" onClick={handleLogout}>Sair</button> */}
           </div>
         </div>
 
@@ -581,9 +540,9 @@ export default function Clients() {
                 {filtered.map((c) => {
                   const statusTxt = c.status || "ENTRADA";
                   const statusKey = String(statusTxt).toLowerCase();
-
                   const total = getEconomiaCliente(c);
                   const consumo = getConsumoMedioCliente(c);
+                  const cats = Array.isArray(c.service_categories) ? c.service_categories : [];
 
                   return (
                     <div key={c.id} className="clientCard2">
@@ -597,9 +556,7 @@ export default function Clients() {
                           </div>
                         </div>
 
-                        <span className={`badge2 badge-${statusKey}`}>
-                          {statusKey === "entrada" ? "Em Andamento" : statusKey}
-                        </span>
+                        <span className={`badge2 badge-${statusKey}`}>{statusKey === "entrada" ? "Em Andamento" : statusKey}</span>
                       </div>
 
                       <div className="clientMeta2">
@@ -608,7 +565,7 @@ export default function Clients() {
                           {c.city || "—"}
                           {c.state ? `, ${c.state}` : ""}
                         </div>
-                        <div className="chip2">{c.service_category || "—"}</div>
+                        <div className="chip2">{cats.length ? cats.join(", ") : "—"}</div>
                         <div className="chip2">{consumo ? `${consumo.toFixed(0)} kWh` : "—"}</div>
                         <div className="clientTotal2">{total ? formatBRL(total) : "—"}</div>
                       </div>
@@ -646,9 +603,7 @@ export default function Clients() {
             )}
           </div>
 
-          <div className="border-t px-4 py-3 text-xs text-muted-foreground">
-            Dica: use os filtros pra priorizar follow-up e organizar funil comercial.
-          </div>
+          <div className="border-t px-4 py-3 text-xs text-muted-foreground">Dica: use os filtros pra priorizar follow-up e organizar funil comercial.</div>
         </div>
 
         {isFormOpen && (
@@ -666,9 +621,7 @@ export default function Clients() {
                     <h2 className="title" style={{ fontSize: 20, margin: 0 }}>
                       {editingClientId ? "Editar Cliente" : "Novo Cliente"}
                     </h2>
-                    <p className="subtitle" style={{ marginTop: 4 }}>
-                      Preencha as abas (Básico → Endereço → Nicho → Financeiro).
-                    </p>
+                    <p className="subtitle" style={{ marginTop: 4 }}>Preencha as abas (Básico → Endereço → Nicho → Financeiro).</p>
                   </div>
                   <div className="actions">
                     <button
@@ -691,12 +644,12 @@ export default function Clients() {
                   <button type="button" className={"tab " + (activeTab === "endereco" ? "active" : "")} onClick={() => setActiveTab("endereco")}>
                     Endereço
                   </button>
-                  {formData.service_category && (
+                  {hasCategory && (
                     <button type="button" className={"tab " + (activeTab === "nicho" ? "active" : "")} onClick={() => setActiveTab("nicho")}>
                       Nicho
                     </button>
                   )}
-                  {formData.service_category && (
+                  {hasCategory && (
                     <button type="button" className={"tab " + (activeTab === "financeiro" ? "active" : "")} onClick={() => setActiveTab("financeiro")}>
                       Financeiro
                     </button>
@@ -755,22 +708,33 @@ export default function Clients() {
                       <InputField label="Observações" value={formData.observations} onChange={(v) => setField("observations", v)} />
                     </div>
 
-                    <SelectField
-                      label="Categoria de Serviço"
-                      value={formData.service_category}
-                      onChange={(v) => setField("service_category", v)}
-                      options={[
-                        { value: "UFV", label: "UFV" },
-                        { value: "MANUTENCAO", label: "MANUTENCAO" },
-                        { value: "ELETROPOSTOS", label: "ELETROPOSTOS" },
-                        { value: "BESS", label: "BESS" },
-                        { value: "MERCADO_LIVRE", label: "MERCADO_LIVRE" },
-                        { value: "SUBESTACAO", label: "SUBESTACAO" },
-                        { value: "CFTV", label: "CFTV" },
-                        { value: "AR", label: "AR" },
-                        { value: "ILUMINACAO", label: "ILUMINACAO" },
-                      ]}
-                    />
+                    {/* ✅ MULTI CATEGORIAS */}
+                    <div className="full">
+                      <label className="label">Categoria(s) de Serviço</label>
+
+                      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                        {["UFV", "MANUTENCAO", "ELETROPOSTOS", "BESS", "MERCADO_LIVRE", "SUBESTACAO", "CFTV", "AR", "ILUMINACAO"].map((cat) => {
+                          const checked = (formData.service_categories || []).includes(cat);
+                          return (
+                            <label key={cat} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={(e) => {
+                                  const on = e.target.checked;
+                                  setFormData((p) => {
+                                    const arr = Array.isArray(p.service_categories) ? p.service_categories : [];
+                                    const next = on ? [...new Set([...arr, cat])] : arr.filter((x) => x !== cat);
+                                    return { ...p, service_categories: next };
+                                  });
+                                }}
+                              />
+                              {cat}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -794,7 +758,7 @@ export default function Clients() {
 
                 {activeTab === "nicho" && (
                   <div className="grid2">
-                    {formData.service_category === "UFV" ? (
+                    {hasUFV ? (
                       <>
                         <InputField label="Potência do Sistema (kWp)" type="number" value={formData.ufv_potencia_kwp} onChange={(v) => setField("ufv_potencia_kwp", v)} />
                         <InputField label="Irradiação (kWh/m²/dia)" type="number" value={formData.ufv_irradiacao} onChange={(v) => setField("ufv_irradiacao", v)} />
@@ -820,10 +784,11 @@ export default function Clients() {
                           onChange={(v) => {
                             setField("ufv_rateio", v);
                             if (v !== "SIM") {
+                              setFormData((p) => ({ ...p, ufv_rateios: [] }));
+                            } else {
                               setFormData((p) => ({
                                 ...p,
-                                ufv_rateio_dados: normalizeRateioDados({}),
-                                ufv_rateio_docs_files: [],
+                                ufv_rateios: (p.ufv_rateios || []).length ? p.ufv_rateios : [newRateioItem()],
                               }));
                             }
                           }}
@@ -833,84 +798,113 @@ export default function Clients() {
                           ]}
                         />
 
-                        {/* ✅ BLOCO RATEIO */}
+                        {/* ✅ MULTI RATEIOS */}
                         {formData.ufv_rateio === "SIM" && (
                           <div className="full" style={{ marginTop: 10 }}>
                             <div className="section">
-                              <div className="sectionTitle">Rateio</div>
+                              <div className="sectionTitle">Rateios</div>
                               <div className="sectionBody">
-                                <div className="grid2">
-                                  <InputField
-                                    label="Número do cliente"
-                                    value={formData.ufv_rateio_dados?.numero_cliente || ""}
-                                    onChange={(v) =>
-                                      setFormData((p) => ({
-                                        ...p,
-                                        ufv_rateio_dados: { ...(p.ufv_rateio_dados || {}), numero_cliente: v },
-                                      }))
-                                    }
-                                  />
+                                {(formData.ufv_rateios || []).map((r, idx) => (
+                                  <div key={r.id} style={{ border: "1px solid #e5e7eb", borderRadius: 12, padding: 12, marginBottom: 12 }}>
+                                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+                                      <b>Rateio #{idx + 1}</b>
+                                      <button
+                                        type="button"
+                                        className="btn danger"
+                                        onClick={() =>
+                                          setFormData((p) => ({
+                                            ...p,
+                                            ufv_rateios: (p.ufv_rateios || []).filter((x) => x.id !== r.id),
+                                          }))
+                                        }
+                                      >
+                                        Remover
+                                      </button>
+                                    </div>
 
-                                  <InputField
-                                    label="CPF"
-                                    value={formData.ufv_rateio_dados?.cpf || ""}
-                                    onChange={(v) =>
-                                      setFormData((p) => ({
-                                        ...p,
-                                        ufv_rateio_dados: { ...(p.ufv_rateio_dados || {}), cpf: v },
-                                      }))
-                                    }
-                                  />
+                                    <div className="grid2">
+                                      <InputField
+                                        label="Número do cliente"
+                                        value={r.numero_cliente}
+                                        onChange={(v) =>
+                                          setFormData((p) => ({
+                                            ...p,
+                                            ufv_rateios: (p.ufv_rateios || []).map((x) => (x.id === r.id ? { ...x, numero_cliente: v } : x)),
+                                          }))
+                                        }
+                                      />
 
-                                  <InputField
-                                    label="% do rateio"
-                                    type="number"
-                                    value={formData.ufv_rateio_dados?.pct || ""}
-                                    onChange={(v) =>
-                                      setFormData((p) => ({
-                                        ...p,
-                                        ufv_rateio_dados: { ...(p.ufv_rateio_dados || {}), pct: v },
-                                      }))
-                                    }
-                                  />
+                                      <InputField
+                                        label="CPF"
+                                        value={r.cpf}
+                                        onChange={(v) =>
+                                          setFormData((p) => ({
+                                            ...p,
+                                            ufv_rateios: (p.ufv_rateios || []).map((x) => (x.id === r.id ? { ...x, cpf: v } : x)),
+                                          }))
+                                        }
+                                      />
 
-                                  <InputField
-                                    label="Endereço da geradora"
-                                    value={formData.ufv_rateio_dados?.endereco_geradora || ""}
-                                    onChange={(v) =>
-                                      setFormData((p) => ({
-                                        ...p,
-                                        ufv_rateio_dados: { ...(p.ufv_rateio_dados || {}), endereco_geradora: v },
-                                      }))
-                                    }
-                                  />
+                                      <InputField
+                                        label="% do rateio"
+                                        type="number"
+                                        value={r.pct}
+                                        onChange={(v) =>
+                                          setFormData((p) => ({
+                                            ...p,
+                                            ufv_rateios: (p.ufv_rateios || []).map((x) => (x.id === r.id ? { ...x, pct: v } : x)),
+                                          }))
+                                        }
+                                      />
 
-                                  <div className="full">
-                                    <label className="label">Foto dos documentos</label>
-                                    <input
-                                      className="input"
-                                      type="file"
-                                      accept="image/*,application/pdf"
-                                      multiple
-                                      onChange={(e) => {
-                                        const files = Array.from(e.target.files || []);
-                                        setFormData((p) => ({ ...p, ufv_rateio_docs_files: files }));
-                                      }}
-                                    />
+                                      <InputField
+                                        label="Endereço da geradora"
+                                        value={r.endereco_geradora}
+                                        onChange={(v) =>
+                                          setFormData((p) => ({
+                                            ...p,
+                                            ufv_rateios: (p.ufv_rateios || []).map((x) => (x.id === r.id ? { ...x, endereco_geradora: v } : x)),
+                                          }))
+                                        }
+                                      />
 
-                                    {/* docs já salvos */}
-                                    {Array.isArray(formData.ufv_rateio_dados?.docs) &&
-                                      formData.ufv_rateio_dados.docs.length > 0 && (
-                                        <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                          {formData.ufv_rateio_dados.docs.map((url) => (
-                                            <a key={url} href={url} target="_blank" rel="noreferrer" className="btn ghost" style={{ height: 34 }}>
-                                              Ver doc
-                                            </a>
-                                          ))}
-                                        </div>
-                                      )}
+                                      <div className="full">
+                                        <label className="label">Foto dos documentos</label>
+                                        <input
+                                          className="input"
+                                          type="file"
+                                          accept="image/*,application/pdf"
+                                          multiple
+                                          onChange={(e) => {
+                                            const files = Array.from(e.target.files || []);
+                                            setFormData((p) => ({
+                                              ...p,
+                                              ufv_rateios: (p.ufv_rateios || []).map((x) => (x.id === r.id ? { ...x, docs_files: files } : x)),
+                                            }));
+                                          }}
+                                        />
+
+                                        {Array.isArray(r.docs) && r.docs.length > 0 && (
+                                          <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                            {r.docs.map((url) => (
+                                              <a key={url} href={url} target="_blank" rel="noreferrer" className="btn ghost" style={{ height: 34 }}>
+                                                Ver doc
+                                              </a>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
                                   </div>
-                                </div>
+                                ))}
+
+                                <button
+                                  type="button"
+                                  className="btn ghost"
+                                  onClick={() => setFormData((p) => ({ ...p, ufv_rateios: [...(p.ufv_rateios || []), newRateioItem()] }))}
+                                >
+                                  + Adicionar rateio
+                                </button>
                               </div>
                             </div>
                           </div>
@@ -944,10 +938,7 @@ export default function Clients() {
                                   onChange={(e) =>
                                     setFormData((p) => ({
                                       ...p,
-                                      ufv_consumo_mensal: {
-                                        ...p.ufv_consumo_mensal,
-                                        [mes]: e.target.value.replace(/[^\d]/g, ""),
-                                      },
+                                      ufv_consumo_mensal: { ...p.ufv_consumo_mensal, [mes]: e.target.value.replace(/[^\d]/g, "") },
                                     }))
                                   }
                                 />
@@ -962,9 +953,7 @@ export default function Clients() {
                         <ReadOnlyField label="Geração Anual Estimada (kWh)" value={String(geracaoAnual.toFixed(2))} />
                       </>
                     ) : (
-                      <div className="full" style={{ color: "#64748b" }}>
-                        (Campos desse nicho você adiciona depois — UFV já está.)
-                      </div>
+                      <div className="full" style={{ color: "#64748b" }}>(Selecione UFV nas categorias para aparecer este nicho.)</div>
                     )}
                   </div>
                 )}
@@ -999,43 +988,23 @@ export default function Clients() {
                           <button
                             className="btn danger"
                             type="button"
-                            onClick={() =>
-                              setFormData((p) => ({
-                                ...p,
-                                financeiro_custos: p.financeiro_custos.filter((it) => it.id !== c.id),
-                              }))
-                            }
+                            onClick={() => setFormData((p) => ({ ...p, financeiro_custos: p.financeiro_custos.filter((it) => it.id !== c.id) }))}
                           >
                             X
                           </button>
                         </div>
                       ))}
 
-                      <button
-                        className="btn ghost"
-                        type="button"
-                        onClick={() =>
-                          setFormData((p) => ({
-                            ...p,
-                            financeiro_custos: [...p.financeiro_custos, { id: uid(), tipo: "", valor: "" }],
-                          }))
-                        }
-                      >
+                      <button className="btn ghost" type="button" onClick={() => setFormData((p) => ({ ...p, financeiro_custos: [...p.financeiro_custos, { id: uid(), tipo: "", valor: "" }] }))}>
                         + Adicionar custo
                       </button>
 
                       <div className="hr" />
 
                       <div className="kpis">
-                        <div>
-                          <b>Fornecedor por kWp:</b> R$ {fornecedorPorKwp.toFixed(2)}
-                        </div>
-                        <div>
-                          <b>Serviço por kWp:</b> R$ {servicoPorKwp.toFixed(2)}
-                        </div>
-                        <div>
-                          <b>Engenharia por kWp:</b> R$ {engenhariaPorKwp.toFixed(2)}
-                        </div>
+                        <div><b>Fornecedor por kWp:</b> R$ {fornecedorPorKwp.toFixed(2)}</div>
+                        <div><b>Serviço por kWp:</b> R$ {servicoPorKwp.toFixed(2)}</div>
+                        <div><b>Engenharia por kWp:</b> R$ {engenhariaPorKwp.toFixed(2)}</div>
                       </div>
 
                       <div className="kpiBig">
@@ -1050,12 +1019,8 @@ export default function Clients() {
 
                     <Section title="Formas de Pagamento (por % — sem parcelas)">
                       <div className="between small">
-                        <span>
-                          Total: <b>{totalPct}%</b>
-                        </span>
-                        <span>
-                          Restante: <b>{pctRestante}%</b>
-                        </span>
+                        <span>Total: <b>{totalPct}%</b></span>
+                        <span>Restante: <b>{Math.max(0, 100 - totalPct)}%</b></span>
                       </div>
 
                       {pagamentosCalculados.map((p) => (
@@ -1100,16 +1065,7 @@ export default function Clients() {
                             </div>
 
                             <div className="payDel">
-                              <button
-                                className="btn danger"
-                                type="button"
-                                onClick={() =>
-                                  setFormData((prev) => ({
-                                    ...prev,
-                                    financeiro_pagamentos: pagamentos.filter((x) => x.id !== p.id),
-                                  }))
-                                }
-                              >
+                              <button className="btn danger" type="button" onClick={() => setFormData((prev) => ({ ...prev, financeiro_pagamentos: pagamentos.filter((x) => x.id !== p.id) }))}>
                                 X
                               </button>
                             </div>
@@ -1117,16 +1073,7 @@ export default function Clients() {
                         </div>
                       ))}
 
-                      <button
-                        className="btn ghost"
-                        type="button"
-                        onClick={() =>
-                          setFormData((p) => ({
-                            ...p,
-                            financeiro_pagamentos: [...p.financeiro_pagamentos, { id: uid(), forma: "PIX", pct: 0 }],
-                          }))
-                        }
-                      >
+                      <button className="btn ghost" type="button" onClick={() => setFormData((p) => ({ ...p, financeiro_pagamentos: [...p.financeiro_pagamentos, { id: uid(), forma: "PIX", pct: 0 }] }))}>
                         + Adicionar forma
                       </button>
 
@@ -1136,14 +1083,7 @@ export default function Clients() {
                 )}
 
                 <div className="formFooter">
-                  <button
-                    className="btn ghost"
-                    type="button"
-                    onClick={() => {
-                      setIsFormOpen(false);
-                      setEditingClientId(null);
-                    }}
-                  >
+                  <button className="btn ghost" type="button" onClick={() => { setIsFormOpen(false); setEditingClientId(null); }}>
                     Cancelar
                   </button>
 
