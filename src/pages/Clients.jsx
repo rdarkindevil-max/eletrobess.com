@@ -870,7 +870,8 @@ export default function Clients() {
                                       fontSize: 12,
                                       fontWeight: 700,
                                       letterSpacing: 0.6,
-                                      opacity: 0.85,
+                                          color: "#000",  
+                                      opacity: 1,
                                       textTransform: "uppercase",
                                       paddingLeft: 2,
                                     }}
