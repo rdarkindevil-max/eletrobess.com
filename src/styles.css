@@ -2171,3 +2171,20 @@ select.input {
 .pageDark .intSectionSub{
   color: rgba(255,255,255,0.65);
 }
+.brandLogo{
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.12);
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.brandLogo img{
+  width: 90%;
+  height: auto;
+  display: block;
+  object-fit: contain;
+}

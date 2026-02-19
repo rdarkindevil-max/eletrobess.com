@@ -12,8 +12,11 @@
   --side-bg: #0b2231;
   --side-bg2: #071824;
   --side-line: rgba(255,255,255,.10);
-  --side-text: #070707;
-  --side-muted: rgba(3, 3, 3, 0.7);
+
+  /* ✅ FIX: texto da sidebar tem que ser CLARO */
+  --side-text: #eaf2ff;
+  --side-muted: rgba(234,242,255,.70);
+
   --side-chip: rgba(255,255,255,.06);
 }
 
@@ -49,14 +52,25 @@
   padding: 10px 10px 14px;
   border-bottom: 1px solid var(--side-line);
 }
+
 .dash-logo{
   width: 44px; height: 44px;
   border-radius: 14px;
-  background: var(--side-chip);
+
+  /* ✅ FIX: deixa o fundo mais visível pra logo não “sumir” */
+  background: rgba(255,255,255,.12);
+
   display:grid; place-items:center;
   overflow:hidden;
 }
-.dash-logo img{ width: 70%; height:auto; display:block; }
+
+/* ✅ FIX: logo maior + garante encaixe */
+.dash-logo img{
+  width: 90%;
+  height: auto;
+  object-fit: contain;
+  display: block;
+}
 
 .dash-brandName{ color: var(--side-text); font-weight: 700; letter-spacing:.2px; }
 .dash-brandSub{ color: var(--side-muted); font-size: 12px; margin-top:2px; }
@@ -143,10 +157,11 @@
   background: linear-gradient(180deg, var(--side-bg), var(--side-bg2));
 }
 
+/* ✅ FIX: botão no topo tem que ser CLARO (tava preto) */
 .dash-menuBtn{
-  background: linear-gradient(180deg, var(--side-bg), var(--side-bg2));
-  border:1px solid var(--line);
-  color: var(--text);
+  background: rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.12);
+  color: #eaf2ff;
   width: 40px; height: 40px;
   border-radius: 14px;
   cursor:pointer;
@@ -179,7 +194,7 @@
   border-radius: 999px;
   border: 1px solid rgb(6, 183, 71);
   background: rgb(6, 183, 71);
-  color: var(--text);
+  color: #06230f;
   font-weight: 800;
   cursor:pointer;
 }
@@ -195,6 +210,7 @@
   border: 1px solid var(--line);
   border-radius: 16px;
 }
+
 /* ===== tabela / lista mais limpa ===== */
 .clients-row{
   display: grid;

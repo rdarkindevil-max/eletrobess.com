@@ -3,6 +3,9 @@ import { NavLink, Outlet, useLocation } from "react-router-dom";
 import { useAuth } from "./auth/useAuth";
 import "./styles.css";
 
+// ✅ logo via import (funciona no domínio sempre)
+import logo from "./assets/logo.png";
+
 export default function Layout({ currentPageName }) {
   const { loading, role } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(true);
@@ -12,28 +15,18 @@ export default function Layout({ currentPageName }) {
     return <div style={{ padding: 20 }}>Carregando...</div>;
   }
 
-  // ===== MENU NOVO =====
-  // Antes de OPERAÇÃO: só "Clientes"
-  // OPERAÇÃO: Integrações (APIs) + Usinas
   const navGroups = useMemo(() => {
-    // portal do cliente
     if (role === "client") {
       return [
         {
           title: "PORTAL",
-          items: [
-            { name: "Portal do Cliente", page: "ClientPortal", to: "/app/client-portal" },
-          ],
+          items: [{ name: "Portal do Cliente", page: "ClientPortal", to: "/app/client-portal" }],
         },
       ];
     }
 
-    // admin / staff
     return [
-      {
-        title: "GERAL",
-        items: [{ name: "Clientes", page: "Clients", to: "/app/clients" }],
-      },
+      { title: "GERAL", items: [{ name: "Clientes", page: "Clients", to: "/app/clients" }] },
       {
         title: "OPERAÇÃO",
         items: [
@@ -53,7 +46,11 @@ export default function Layout({ currentPageName }) {
     <div className="app">
       <aside className={"sidebar " + (sidebarOpen ? "open" : "closed")}>
         <div className="brand">
-          <div className="brandLogo"></div>
+          {/* ✅ LOGO REAL */}
+          <div className="brandLogo">
+            <img src={logo} alt="Eletrobess" />
+          </div>
+
           <div>
             <div className="brandName">Eletrobess</div>
             <div className="brandSub">Soluções</div>
@@ -69,7 +66,6 @@ export default function Layout({ currentPageName }) {
                 <NavLink
                   key={item.page}
                   to={item.to}
-                  // NavLink já resolve o "active" sozinho
                   className={({ isActive }) => {
                     const active = isActive || isActiveFallback(item);
                     return "navItem " + (active ? "active" : "");
@@ -99,7 +95,6 @@ export default function Layout({ currentPageName }) {
           </div>
         </header>
 
-        {/* aqui entra a página */}
         <main className="content">
           <Outlet />
         </main>
