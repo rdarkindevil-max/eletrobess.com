@@ -7,11 +7,12 @@ export default function Logout() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    (async () => {
+    const run = async () => {
       try {
-        // pega usuário ANTES do signOut
-        const { data: ud } = await supabase.auth.getUser();
-        const user = ud?.user;
+        // 🔥 pega sessão diretamente (mais seguro que getUser)
+        const { data: sessionData } = await supabase.auth.getSession();
+        const session = sessionData?.session;
+        const user = session?.user;
 
         if (user) {
           await logActivity("LOGOUT", {
@@ -19,13 +20,16 @@ export default function Logout() {
             email: user.email,
           });
         }
-      } catch (e) {
-        console.warn("Falha ao registrar LOGOUT:", e);
-      } finally {
-        await supabase.auth.signOut();
-        navigate("/login", { replace: true });
+      } catch (err) {
+        console.warn("Erro ao registrar LOGOUT:", err);
       }
-    })();
+
+      // 🔥 só faz signOut depois do log
+      await supabase.auth.signOut();
+      navigate("/login", { replace: true });
+    };
+
+    run();
   }, [navigate]);
 
   return (
