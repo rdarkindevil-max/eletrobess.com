@@ -38,7 +38,7 @@ export default function DashboardLayout() {
 
       if (!alive) return;
 
-      setRole(error ? "client" : (data?.role || "client"));
+      setRole(error ? "client" : data?.role || "client");
       setLoadingRole(false);
     })();
 
@@ -48,7 +48,6 @@ export default function DashboardLayout() {
   }, []);
 
   const isClient = role === "client";
-  const isStaff = role === "staff" || role === "admin";
   const isAdmin = role === "admin";
 
   // ✅ NAV baseado no role
@@ -78,7 +77,8 @@ export default function DashboardLayout() {
           { to: "/app/plants", label: "Usinas", icon: "⚡" },
           { to: "/app/campo-tecnico", label: "Campo (Técnico)", icon: "🛠" },
           { to: "/app/client-portal", label: "Portal do Cliente", icon: "👤" },
-          { to: "/app/employee-invites", label: "Convites (Funcionários)", icon: "📨" }, // ✅ NOVO
+          { to: "/app/employee-invites", label: "Convites (Funcionários)", icon: "📨" },
+          { to: "/app/logs", label: "Logs (Acessos)", icon: "🧾" }, // ✅ NOVO
         ],
       },
     ];
@@ -101,10 +101,12 @@ export default function DashboardLayout() {
     const q = search.trim().toLowerCase();
     if (!q) return NAV;
 
-    return NAV.map((g) => ({
-      ...g,
-      items: g.items.filter((i) => i.label.toLowerCase().includes(q)),
-    })).filter((g) => g.items.length > 0);
+    return NAV
+      .map((g) => ({
+        ...g,
+        items: g.items.filter((i) => i.label.toLowerCase().includes(q)),
+      }))
+      .filter((g) => g.items.length > 0);
   }, [search, NAV]);
 
   async function logout() {
@@ -112,7 +114,7 @@ export default function DashboardLayout() {
     navigate("/login", { replace: true });
   }
 
-  // ✅ Enquanto carrega role, mostra sidebar "neutra" (ou só portal)
+  // ✅ Enquanto carrega role
   if (loadingRole) {
     return (
       <div className="dash-root">
@@ -155,9 +157,7 @@ export default function DashboardLayout() {
                 <NavLink
                   key={it.to}
                   to={it.to}
-                  className={({ isActive }) =>
-                    `dash-link ${isActive ? "active" : ""}`
-                  }
+                  className={({ isActive }) => `dash-link ${isActive ? "active" : ""}`}
                 >
                   <span className="dash-ico">{it.icon}</span>
                   <span className="dash-label">{it.label}</span>
@@ -172,12 +172,8 @@ export default function DashboardLayout() {
           <div className="dash-statusCard">
             <div className="dash-statusIcon">⚡</div>
             <div>
-              <div className="dash-statusTitle">
-                {isClient ? "Área do Cliente" : "Sistema online"}
-              </div>
-              <div className="dash-statusValue">
-                {isClient ? "Acesso restrito ao portal" : "100% operacional"}
-              </div>
+              <div className="dash-statusTitle">{isClient ? "Área do Cliente" : "Sistema online"}</div>
+              <div className="dash-statusValue">{isClient ? "Acesso restrito ao portal" : "100% operacional"}</div>
             </div>
           </div>
         </div>
@@ -185,11 +181,7 @@ export default function DashboardLayout() {
 
       <main className="dash-main">
         <header className="dash-topbar">
-          <button
-            className="dash-menuBtn"
-            onClick={() => setMenuOpen((p) => !p)}
-            type="button"
-          >
+          <button className="dash-menuBtn" onClick={() => setMenuOpen((p) => !p)} type="button">
             ☰
           </button>
 
@@ -201,18 +193,13 @@ export default function DashboardLayout() {
             <button className="dash-iconBtn" title="Notificações" type="button">
               🔔
             </button>
-            <button
-              className="dash-avatar"
-              type="button"
-              onClick={logout}
-              title="Sair"
-            >
+            <button className="dash-avatar" type="button" onClick={logout} title="Sair">
               Sair
             </button>
           </div>
         </header>
 
-        <div className="dash-content ">
+        <div className="dash-content">
           <Outlet />
         </div>
       </main>
