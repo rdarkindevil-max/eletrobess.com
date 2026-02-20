@@ -8,17 +8,17 @@ import { supabase } from "./supabaseClient";
 export async function logActivity(type, meta = {}) {
   const t = String(type || "").toUpperCase();
 
-  // tenta pegar sessão (mais confiável que getUser)
+  // tenta pegar sessão (quando ainda existe)
   const { data: sess } = await supabase.auth.getSession();
   const user = sess?.session?.user || null;
 
   const payload = {
     type: t,
-    user_id: meta.userId || user?.id || null,
-    email: meta.email || user?.email || null,
-    ip: meta.ip || null,
-    user_agent: meta.userAgent || navigator.userAgent,
-    extra: meta.extra || null,
+    user_id: meta.userId ?? user?.id ?? null,
+    email: meta.email ?? user?.email ?? null,
+    ip: meta.ip ?? null,
+    user_agent: meta.userAgent ?? (typeof navigator !== "undefined" ? navigator.userAgent : null),
+    extra: meta.extra ?? null,
   };
 
   const { error } = await supabase.from("activity_logs").insert(payload);

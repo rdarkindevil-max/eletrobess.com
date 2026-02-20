@@ -12,7 +12,7 @@ import Dashboard from "./pages/Dashboard";
 import Clients from "./pages/Clients";
 import Employees from "./pages/Employees";
 import EmployeeInvites from "./pages/EmployeeInvites";
-import EmployeeLogs from "./pages/EmployeeLogs"; // ✅ NOVO (crie esse arquivo)
+import EmployeeLogs from "./pages/EmployeeLogs";
 import CampoTecnico from "./pages/CampoTecnico";
 import ClientPortal from "./pages/ClientPortal";
 import Integrations from "./pages/Integrations";
@@ -21,11 +21,16 @@ import Plants from "./pages/Plants";
 import { logActivity } from "./lib/logActivity";
 
 export default function App() {
-  // ✅ Loga LOGIN/LOGOUT (funciona certo dentro do componente)
   useEffect(() => {
     const { data: listener } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_IN") logActivity("LOGIN");
-      if (event === "SIGNED_OUT") logActivity("LOGOUT");
+      if (event === "SIGNED_IN") {
+        logActivity("LOGIN").catch((e) =>
+          console.warn("Falha ao registrar LOGIN:", e?.message || e)
+        );
+      }
+
+      // ❌ não loga SIGNED_OUT aqui (sem token, RLS bloqueia)
+      // logout deve ser logado ANTES do signOut() no botão "Sair"
     });
 
     return () => {
@@ -41,10 +46,8 @@ export default function App() {
 
       <Route element={<RequireAuth />}>
         <Route element={<DashboardLayout />}>
-          {/* ✅ CLIENT PORTAL: todo mundo autenticado pode */}
           <Route path="/app/client-portal" element={<ClientPortal />} />
 
-          {/* ✅ STAFF/ADMIN */}
           <Route
             path="/app/dashboard"
             element={
@@ -53,6 +56,7 @@ export default function App() {
               </RequireRole>
             }
           />
+
           <Route
             path="/app/clients"
             element={
@@ -61,6 +65,7 @@ export default function App() {
               </RequireRole>
             }
           />
+
           <Route
             path="/app/campo-tecnico"
             element={
@@ -69,6 +74,7 @@ export default function App() {
               </RequireRole>
             }
           />
+
           <Route
             path="/app/plants"
             element={
@@ -78,7 +84,6 @@ export default function App() {
             }
           />
 
-          {/* ✅ CONVITES: staff/admin */}
           <Route
             path="/app/employee-invites"
             element={
@@ -88,7 +93,6 @@ export default function App() {
             }
           />
 
-          {/* ✅ LOGS: staff/admin (se quiser admin-only, troca allow={["admin"]}) */}
           <Route
             path="/app/logs"
             element={
@@ -98,7 +102,6 @@ export default function App() {
             }
           />
 
-          {/* ✅ ADMIN ONLY */}
           <Route
             path="/app/employees"
             element={
@@ -107,6 +110,7 @@ export default function App() {
               </RequireRole>
             }
           />
+
           <Route
             path="/app/integrations"
             element={
@@ -118,9 +122,7 @@ export default function App() {
         </Route>
       </Route>
 
-      {/* ✅ IMPORTANTE: qualquer /app/* cai no portal por padrão */}
       <Route path="/app/*" element={<Navigate to="/app/client-portal" replace />} />
-
       <Route path="*" element={<Navigate to="/login" replace />} />
     </Routes>
   );
