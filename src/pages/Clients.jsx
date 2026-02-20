@@ -421,7 +421,6 @@ export default function Clients() {
   );
 
   const hasCategory = categories.length > 0;
-  const hasUFV = categories.includes("UFV");
 
   // ✅ payload limpo (sem id e sem docs_files)
   // ✅ salva service_category (compat) como a 1ª categoria
@@ -917,12 +916,12 @@ export default function Clients() {
                             className="input"
                             value={cat || ""}
                             onChange={(e) =>
-                              setFormData((p) => ({
-                                ...p,
-                                service_categories: (p.service_categories || []).map(
-                                  (x, idx) => (idx === i ? e.target.value : x)
-                                ),
-                              }))
+                              setFormData((p) => {
+                                const next = (p.service_categories || []).map((x, idx) =>
+                                  idx === i ? e.target.value : x
+                                );
+                                return { ...p, service_categories: normalizeCategories(next) };
+                              })
                             }
                           >
                             <option value="">Selecione</option>
@@ -1004,302 +1003,311 @@ export default function Clients() {
                   </div>
                 )}
 
+                {/* ✅ NICHOS: abre seção pra TODA categoria selecionada */}
                 {activeTab === "nicho" && (
                   <div className="grid2">
-                    {hasUFV ? (
-                      <>
-                        <InputField
-                          label="Potência do Sistema (kWp)"
-                          type="number"
-                          value={formData.ufv_potencia_kwp}
-                          onChange={(v) => setField("ufv_potencia_kwp", v)}
-                        />
-                        <InputField
-                          label="Irradiação (kWh/m²/dia)"
-                          type="number"
-                          value={formData.ufv_irradiacao}
-                          onChange={(v) => setField("ufv_irradiacao", v)}
-                        />
+                    {categories.length === 0 ? (
+                      <div className="full" style={{ color: "#64748b" }}>
+                        (Selecione ao menos 1 categoria no Básico para liberar os nichos.)
+                      </div>
+                    ) : (
+                      categories.map((cat) => {
+                        if (cat === "UFV") {
+                          return (
+                            <React.Fragment key="UFV">
+                              <InputField
+                                label="Potência do Sistema (kWp)"
+                                type="number"
+                                value={formData.ufv_potencia_kwp}
+                                onChange={(v) => setField("ufv_potencia_kwp", v)}
+                              />
+                              <InputField
+                                label="Irradiação (kWh/m²/dia)"
+                                type="number"
+                                value={formData.ufv_irradiacao}
+                                onChange={(v) => setField("ufv_irradiacao", v)}
+                              />
 
-                        <SelectField
-                          label="Tipos de Telhado"
-                          value={formData.ufv_roof_type}
-                          onChange={(v) => setField("ufv_roof_type", v)}
-                          options={[
-                            { value: "Fibrocimento", label: "Fibrocimento" },
-                            { value: "Cerâmica", label: "Cerâmica" },
-                            { value: "Sanduíche", label: "Sanduíche" },
-                            { value: "Chapa Metálica", label: "Chapa Metálica" },
-                            { value: "Laje", label: "Laje" },
-                            { value: "Solo", label: "Solo" },
-                            { value: "CARPORT", label: "CARPORT" },
-                          ]}
-                        />
+                              <SelectField
+                                label="Tipos de Telhado"
+                                value={formData.ufv_roof_type}
+                                onChange={(v) => setField("ufv_roof_type", v)}
+                                options={[
+                                  { value: "Fibrocimento", label: "Fibrocimento" },
+                                  { value: "Cerâmica", label: "Cerâmica" },
+                                  { value: "Sanduíche", label: "Sanduíche" },
+                                  { value: "Chapa Metálica", label: "Chapa Metálica" },
+                                  { value: "Laje", label: "Laje" },
+                                  { value: "Solo", label: "Solo" },
+                                  { value: "CARPORT", label: "CARPORT" },
+                                ]}
+                              />
 
-                        <SelectField
-                          label="Opção de Rateio"
-                          value={formData.ufv_rateio}
-                          onChange={(v) => {
-                            setField("ufv_rateio", v);
-                            if (v !== "SIM") {
-                              setFormData((p) => ({ ...p, ufv_rateios: [] }));
-                            } else {
-                              setFormData((p) => ({
-                                ...p,
-                                ufv_rateios:
-                                  (p.ufv_rateios || []).length
-                                    ? p.ufv_rateios
-                                    : [newRateioItem()],
-                              }));
-                            }
-                          }}
-                          options={[
-                            { value: "SIM", label: "SIM" },
-                            { value: "NÃO", label: "NÃO" },
-                          ]}
-                        />
+                              <SelectField
+                                label="Opção de Rateio"
+                                value={formData.ufv_rateio}
+                                onChange={(v) => {
+                                  setField("ufv_rateio", v);
+                                  if (v !== "SIM") {
+                                    setFormData((p) => ({ ...p, ufv_rateios: [] }));
+                                  } else {
+                                    setFormData((p) => ({
+                                      ...p,
+                                      ufv_rateios:
+                                        (p.ufv_rateios || []).length
+                                          ? p.ufv_rateios
+                                          : [newRateioItem()],
+                                    }));
+                                  }
+                                }}
+                                options={[
+                                  { value: "SIM", label: "SIM" },
+                                  { value: "NÃO", label: "NÃO" },
+                                ]}
+                              />
 
-                        {/* ✅ MULTI RATEIOS (com botão ADD) */}
-                        {formData.ufv_rateio === "SIM" && (
-                          <div className="full" style={{ marginTop: 10 }}>
-                            <div className="section">
-                              <div className="sectionTitle">Rateios</div>
-                              <div className="sectionBody">
-                                {(formData.ufv_rateios || []).map((r, idx) => (
-                                  <div
-                                    key={r.id}
-                                    style={{
-                                      border: "1px solid #e5e7eb",
-                                      borderRadius: 12,
-                                      padding: 12,
-                                      marginBottom: 12,
-                                    }}
-                                  >
-                                    <div
-                                      style={{
-                                        display: "flex",
-                                        justifyContent: "space-between",
-                                        alignItems: "center",
-                                        marginBottom: 10,
-                                      }}
-                                    >
-                                      <b>Rateio #{idx + 1}</b>
+                              {/* ✅ MULTI RATEIOS (com botão ADD) */}
+                              {formData.ufv_rateio === "SIM" && (
+                                <div className="full" style={{ marginTop: 10 }}>
+                                  <div className="section">
+                                    <div className="sectionTitle">Rateios</div>
+                                    <div className="sectionBody">
+                                      {(formData.ufv_rateios || []).map((r, idx) => (
+                                        <div
+                                          key={r.id}
+                                          style={{
+                                            border: "1px solid #e5e7eb",
+                                            borderRadius: 12,
+                                            padding: 12,
+                                            marginBottom: 12,
+                                          }}
+                                        >
+                                          <div
+                                            style={{
+                                              display: "flex",
+                                              justifyContent: "space-between",
+                                              alignItems: "center",
+                                              marginBottom: 10,
+                                            }}
+                                          >
+                                            <b>Rateio #{idx + 1}</b>
+                                            <button
+                                              type="button"
+                                              className="btn danger"
+                                              onClick={() =>
+                                                setFormData((p) => ({
+                                                  ...p,
+                                                  ufv_rateios: (p.ufv_rateios || []).filter(
+                                                    (x) => x.id !== r.id
+                                                  ),
+                                                }))
+                                              }
+                                            >
+                                              Remover
+                                            </button>
+                                          </div>
+
+                                          <div className="grid2">
+                                            <InputField
+                                              label="Número do cliente"
+                                              value={r.numero_cliente}
+                                              onChange={(v) =>
+                                                setFormData((p) => ({
+                                                  ...p,
+                                                  ufv_rateios: (p.ufv_rateios || []).map((x) =>
+                                                    x.id === r.id
+                                                      ? { ...x, numero_cliente: v }
+                                                      : x
+                                                  ),
+                                                }))
+                                              }
+                                            />
+
+                                            <InputField
+                                              label="CPF"
+                                              value={r.cpf}
+                                              onChange={(v) =>
+                                                setFormData((p) => ({
+                                                  ...p,
+                                                  ufv_rateios: (p.ufv_rateios || []).map((x) =>
+                                                    x.id === r.id ? { ...x, cpf: v } : x
+                                                  ),
+                                                }))
+                                              }
+                                            />
+
+                                            <InputField
+                                              label="% do rateio"
+                                              type="number"
+                                              value={r.pct}
+                                              onChange={(v) =>
+                                                setFormData((p) => ({
+                                                  ...p,
+                                                  ufv_rateios: (p.ufv_rateios || []).map((x) =>
+                                                    x.id === r.id ? { ...x, pct: v } : x
+                                                  ),
+                                                }))
+                                              }
+                                            />
+
+                                            <InputField
+                                              label="Endereço da geradora"
+                                              value={r.endereco_geradora}
+                                              onChange={(v) =>
+                                                setFormData((p) => ({
+                                                  ...p,
+                                                  ufv_rateios: (p.ufv_rateios || []).map((x) =>
+                                                    x.id === r.id
+                                                      ? { ...x, endereco_geradora: v }
+                                                      : x
+                                                  ),
+                                                }))
+                                              }
+                                            />
+
+                                            <div className="full">
+                                              <label className="label">Foto dos documentos</label>
+                                              <input
+                                                className="input"
+                                                type="file"
+                                                accept="image/*,application/pdf"
+                                                multiple
+                                                onChange={(e) => {
+                                                  const files = Array.from(e.target.files || []);
+                                                  setFormData((p) => ({
+                                                    ...p,
+                                                    ufv_rateios: (p.ufv_rateios || []).map((x) =>
+                                                      x.id === r.id
+                                                        ? { ...x, docs_files: files }
+                                                        : x
+                                                    ),
+                                                  }));
+                                                }}
+                                              />
+
+                                              {Array.isArray(r.docs) && r.docs.length > 0 && (
+                                                <div
+                                                  style={{
+                                                    marginTop: 10,
+                                                    display: "flex",
+                                                    gap: 8,
+                                                    flexWrap: "wrap",
+                                                  }}
+                                                >
+                                                  {r.docs.map((url) => (
+                                                    <a
+                                                      key={url}
+                                                      href={url}
+                                                      target="_blank"
+                                                      rel="noreferrer"
+                                                      className="btn ghost"
+                                                      style={{ height: 34 }}
+                                                    >
+                                                      Ver doc
+                                                    </a>
+                                                  ))}
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      ))}
+
                                       <button
                                         type="button"
-                                        className="btn danger"
+                                        className="btn ghost"
                                         onClick={() =>
                                           setFormData((p) => ({
                                             ...p,
-                                            ufv_rateios: (p.ufv_rateios || []).filter(
-                                              (x) => x.id !== r.id
-                                            ),
+                                            ufv_rateios: [...(p.ufv_rateios || []), newRateioItem()],
                                           }))
                                         }
                                       >
-                                        Remover
+                                        + Adicionar rateio
                                       </button>
                                     </div>
-
-                                    <div className="grid2">
-                                      <InputField
-                                        label="Número do cliente"
-                                        value={r.numero_cliente}
-                                        onChange={(v) =>
-                                          setFormData((p) => ({
-                                            ...p,
-                                            ufv_rateios: (p.ufv_rateios || []).map((x) =>
-                                              x.id === r.id
-                                                ? { ...x, numero_cliente: v }
-                                                : x
-                                            ),
-                                          }))
-                                        }
-                                      />
-
-                                      <InputField
-                                        label="CPF"
-                                        value={r.cpf}
-                                        onChange={(v) =>
-                                          setFormData((p) => ({
-                                            ...p,
-                                            ufv_rateios: (p.ufv_rateios || []).map((x) =>
-                                              x.id === r.id ? { ...x, cpf: v } : x
-                                            ),
-                                          }))
-                                        }
-                                      />
-
-                                      <InputField
-                                        label="% do rateio"
-                                        type="number"
-                                        value={r.pct}
-                                        onChange={(v) =>
-                                          setFormData((p) => ({
-                                            ...p,
-                                            ufv_rateios: (p.ufv_rateios || []).map((x) =>
-                                              x.id === r.id ? { ...x, pct: v } : x
-                                            ),
-                                          }))
-                                        }
-                                      />
-
-                                      <InputField
-                                        label="Endereço da geradora"
-                                        value={r.endereco_geradora}
-                                        onChange={(v) =>
-                                          setFormData((p) => ({
-                                            ...p,
-                                            ufv_rateios: (p.ufv_rateios || []).map((x) =>
-                                              x.id === r.id
-                                                ? { ...x, endereco_geradora: v }
-                                                : x
-                                            ),
-                                          }))
-                                        }
-                                      />
-
-                                      <div className="full">
-                                        <label className="label">
-                                          Foto dos documentos
-                                        </label>
-                                        <input
-                                          className="input"
-                                          type="file"
-                                          accept="image/*,application/pdf"
-                                          multiple
-                                          onChange={(e) => {
-                                            const files = Array.from(
-                                              e.target.files || []
-                                            );
-                                            setFormData((p) => ({
-                                              ...p,
-                                              ufv_rateios: (p.ufv_rateios || []).map((x) =>
-                                                x.id === r.id
-                                                  ? { ...x, docs_files: files }
-                                                  : x
-                                              ),
-                                            }));
-                                          }}
-                                        />
-
-                                        {Array.isArray(r.docs) && r.docs.length > 0 && (
-                                          <div
-                                            style={{
-                                              marginTop: 10,
-                                              display: "flex",
-                                              gap: 8,
-                                              flexWrap: "wrap",
-                                            }}
-                                          >
-                                            {r.docs.map((url) => (
-                                              <a
-                                                key={url}
-                                                href={url}
-                                                target="_blank"
-                                                rel="noreferrer"
-                                                className="btn ghost"
-                                                style={{ height: 34 }}
-                                              >
-                                                Ver doc
-                                              </a>
-                                            ))}
-                                          </div>
-                                        )}
-                                      </div>
-                                    </div>
                                   </div>
-                                ))}
-
-                                <button
-                                  type="button"
-                                  className="btn ghost"
-                                  onClick={() =>
-                                    setFormData((p) => ({
-                                      ...p,
-                                      ufv_rateios: [
-                                        ...(p.ufv_rateios || []),
-                                        newRateioItem(),
-                                      ],
-                                    }))
-                                  }
-                                >
-                                  + Adicionar rateio
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        )}
-
-                        <div className="full">
-                          <label className="label">Consumo Mensal (kWh)</label>
-
-                          <div className="grid3">
-                            {Object.entries(formData.ufv_consumo_mensal).map(
-                              ([mes, val]) => (
-                                <div
-                                  key={mes}
-                                  style={{
-                                    display: "flex",
-                                    flexDirection: "column",
-                                    gap: 6,
-                                  }}
-                                >
-                                  <div
-                                    style={{
-                                      fontSize: 12,
-                                      fontWeight: 700,
-                                      letterSpacing: 0.6,
-                                      color: "#000",
-                                      opacity: 1,
-                                      textTransform: "uppercase",
-                                      paddingLeft: 2,
-                                    }}
-                                  >
-                                    {mes.toUpperCase()}
-                                  </div>
-
-                                  <input
-                                    className="input"
-                                    inputMode="numeric"
-                                    placeholder="0"
-                                    value={val}
-                                    onChange={(e) =>
-                                      setFormData((p) => ({
-                                        ...p,
-                                        ufv_consumo_mensal: {
-                                          ...p.ufv_consumo_mensal,
-                                          [mes]: e.target.value.replace(/[^\d]/g, ""),
-                                        },
-                                      }))
-                                    }
-                                  />
                                 </div>
-                              )
-                            )}
-                          </div>
-                        </div>
+                              )}
 
-                        <ReadOnlyField
-                          label="Consumo Anual (kWh)"
-                          value={String(consumoAnual)}
-                        />
-                        <ReadOnlyField
-                          label="Média Mensal (kWh)"
-                          value={String(consumoMedio)}
-                        />
-                        <ReadOnlyField
-                          label="Geração Mensal Estimada (kWh)"
-                          value={String(geracaoMensal.toFixed(2))}
-                        />
-                        <ReadOnlyField
-                          label="Geração Anual Estimada (kWh)"
-                          value={String(geracaoAnual.toFixed(2))}
-                        />
-                      </>
-                    ) : (
-                      <div className="full" style={{ color: "#64748b" }}>
-                        (Selecione UFV nas categorias para aparecer este nicho.)
-                      </div>
+                              <div className="full">
+                                <label className="label">Consumo Mensal (kWh)</label>
+
+                                <div className="grid3">
+                                  {Object.entries(formData.ufv_consumo_mensal).map(([mes, val]) => (
+                                    <div
+                                      key={mes}
+                                      style={{
+                                        display: "flex",
+                                        flexDirection: "column",
+                                        gap: 6,
+                                      }}
+                                    >
+                                      <div
+                                        style={{
+                                          fontSize: 12,
+                                          fontWeight: 700,
+                                          letterSpacing: 0.6,
+                                          color: "#000",
+                                          opacity: 1,
+                                          textTransform: "uppercase",
+                                          paddingLeft: 2,
+                                        }}
+                                      >
+                                        {mes.toUpperCase()}
+                                      </div>
+
+                                      <input
+                                        className="input"
+                                        inputMode="numeric"
+                                        placeholder="0"
+                                        value={val}
+                                        onChange={(e) =>
+                                          setFormData((p) => ({
+                                            ...p,
+                                            ufv_consumo_mensal: {
+                                              ...p.ufv_consumo_mensal,
+                                              [mes]: e.target.value.replace(/[^\d]/g, ""),
+                                            },
+                                          }))
+                                        }
+                                      />
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+
+                              <ReadOnlyField
+                                label="Consumo Anual (kWh)"
+                                value={String(consumoAnual)}
+                              />
+                              <ReadOnlyField
+                                label="Média Mensal (kWh)"
+                                value={String(consumoMedio)}
+                              />
+                              <ReadOnlyField
+                                label="Geração Mensal Estimada (kWh)"
+                                value={String(geracaoMensal.toFixed(2))}
+                              />
+                              <ReadOnlyField
+                                label="Geração Anual Estimada (kWh)"
+                                value={String(geracaoAnual.toFixed(2))}
+                              />
+                            </React.Fragment>
+                          );
+                        }
+
+                        // ✅ outros nichos (placeholder, mas ABRE)
+                        return (
+                          <div key={cat} className="full">
+                            <Section title={`Nicho: ${cat}`}>
+                              <div style={{ color: "#64748b" }}>
+                                (Campos de <b>{cat}</b> ainda não foram adicionados — mas o nicho já está abrindo.)
+                              </div>
+                            </Section>
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                 )}

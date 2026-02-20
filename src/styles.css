@@ -2224,3 +2224,76 @@ textarea::placeholder {
 .modal, .dialog, .card, .content {
   color: #0f172a;
 }
+/* ===== EMPLOYEE INVITES FIX ===== */
+
+.employee-page,
+.employee-page * {
+  opacity: 1 !important;
+}
+
+/* Título principal */
+.employee-page h1 {
+  color: #0f172a !important; /* quase preto */
+  font-weight: 800 !important;
+}
+
+/* Texto normal */
+.employee-page {
+  color: #0f172a !important;
+}
+
+/* Texto secundário */
+.employee-page .subtext {
+  color: #475569 !important; /* cinza forte */
+}
+
+/* Card */
+.employee-card {
+  background: #ffffff !important;
+  border: 1px solid rgba(15, 23, 42, 0.12) !important;
+  border-radius: 12px;
+  padding: 12px;
+}
+
+/* Email */
+.employee-email {
+  color: #111827 !important;
+  font-weight: 800 !important;
+}
+
+/* Meta info */
+.employee-meta {
+  color: #334155 !important;
+  font-weight: 600 !important;
+}
+
+/* Badge ACCEPTED */
+.badge-accepted {
+  background: rgba(16, 185, 129, 0.15);
+  color: #047857;
+  border: 1px solid rgba(16, 185, 129, 0.35);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 12px;
+}
+
+/* Badge PENDING */
+.badge-pending {
+  background: rgba(245, 158, 11, 0.15);
+  color: #92400e;
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 12px;
+}
+.employee-page,
+.employee-page * {
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+.employee-page {
+  color: #0f172a !important;
+}
