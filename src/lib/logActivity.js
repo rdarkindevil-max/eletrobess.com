@@ -1,14 +1,6 @@
 // src/lib/logActivity.js
 import { supabase } from "./supabaseClient";
 
-/**
- * type: "LOGIN" | "LOGOUT" | etc
- * meta: { userId?, email?, ip?, userAgent?, extra?, dedupeKey? }
- *
- * IMPORTANTE:
- * - NÃO depende de getSession() (evita falhar no LOGOUT)
- * - usa UPSERT por dedupe_key pra não duplicar (multi-abas / dev)
- */
 export async function logActivity(type, meta = {}) {
   const t = String(type || "").toUpperCase().trim();
   if (!t) throw new Error("logActivity: type vazio");
@@ -25,19 +17,18 @@ export async function logActivity(type, meta = {}) {
     dedupe_key: meta.dedupeKey ?? null,
   };
 
+  // ✅ sem dedupe_key = insert normal (não depende de UNIQUE)
+  if (!payload.dedupe_key) {
+    const { error } = await supabase.from("activity_logs").insert(payload);
+    if (error) throw error;
+    return true;
+  }
+
+  // ✅ com dedupe_key = upsert (precisa do UNIQUE index)
   const { error } = await supabase
     .from("activity_logs")
     .upsert(payload, { onConflict: "dedupe_key", ignoreDuplicates: true });
 
-  if (error) {
-    console.error("logActivity error:", {
-      message: error.message,
-      details: error.details,
-      hint: error.hint,
-      code: error.code,
-      payload,
-    });
-    throw error;
-  }
+  if (error) throw error;
   return true;
 }
