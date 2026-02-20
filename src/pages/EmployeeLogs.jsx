@@ -27,6 +27,7 @@ function Badge({ children, tone = "default" }) {
     gray: { bg: "rgba(100,116,139,.12)", fg: "#334155", bd: "rgba(100,116,139,.25)" },
   };
   const t = map[tone] || map.default;
+
   return (
     <span
       style={{
@@ -47,13 +48,6 @@ function Badge({ children, tone = "default" }) {
   );
 }
 
-function addDaysISO(dateStr, days) {
-  // dateStr: "YYYY-MM-DD"
-  const d = new Date(`${dateStr}T00:00:00`);
-  d.setDate(d.getDate() + days);
-  return d.toISOString(); // UTC ISO
-}
-
 export default function EmployeeLogs() {
   const [loading, setLoading] = useState(true);
   const [errMsg, setErrMsg] = useState("");
@@ -63,9 +57,8 @@ export default function EmployeeLogs() {
   const [type, setType] = useState("all"); // all | LOGIN | LOGOUT
   const [limit, setLimit] = useState(50);
 
-  // ✅ Calendário (filtro server-side)
-  const [fromDate, setFromDate] = useState(""); // YYYY-MM-DD
-  const [toDate, setToDate] = useState("");     // YYYY-MM-DD
+  // ✅ 1 calendário só (filtra 1 dia)
+  const [day, setDay] = useState(""); // YYYY-MM-DD
 
   const loadLogs = async () => {
     setErrMsg("");
@@ -80,16 +73,11 @@ export default function EmployeeLogs() {
 
       if (type !== "all") query = query.eq("type", type);
 
-      // ✅ filtro por data
-      // fromDate = >= fromDate 00:00
-      if (fromDate) {
-        query = query.gte("created_at", `${fromDate}T00:00:00.000Z`);
-      }
-
-      // toDate = < (toDate + 1 dia) 00:00  (pega o dia inteiro)
-      if (toDate) {
-        const nextDayISO = addDaysISO(toDate, 1);
-        query = query.lt("created_at", nextDayISO);
+      // ✅ filtro por dia inteiro (00:00:00 até 23:59:59.999)
+      if (day) {
+        const start = new Date(`${day}T00:00:00`);
+        const end = new Date(`${day}T23:59:59.999`);
+        query = query.gte("created_at", start.toISOString()).lte("created_at", end.toISOString());
       }
 
       const { data, error } = await query;
@@ -107,7 +95,7 @@ export default function EmployeeLogs() {
   useEffect(() => {
     loadLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, limit, fromDate, toDate]);
+  }, [type, limit, day]);
 
   // busca local por texto (email, ip etc)
   const filtered = useMemo(() => {
@@ -143,9 +131,9 @@ export default function EmployeeLogs() {
         style={{
           marginTop: 16,
           display: "grid",
-          gridTemplateColumns: "1fr 160px 140px 170px 170px 140px",
+          gridTemplateColumns: "1fr 160px 140px 190px 140px",
           gap: 10,
-          maxWidth: 1250,
+          maxWidth: 1100,
         }}
       >
         <input
@@ -161,7 +149,11 @@ export default function EmployeeLogs() {
           <option value="LOGOUT">LOGOUT</option>
         </select>
 
-        <select className="input" value={String(limit)} onChange={(e) => setLimit(Number(e.target.value) || 50)}>
+        <select
+          className="input"
+          value={String(limit)}
+          onChange={(e) => setLimit(Number(e.target.value) || 50)}
+        >
           <option value="50">50</option>
           <option value="100">100</option>
           <option value="200">200</option>
@@ -170,17 +162,9 @@ export default function EmployeeLogs() {
         <input
           className="input"
           type="date"
-          value={fromDate}
-          onChange={(e) => setFromDate(e.target.value)}
-          title="Data inicial"
-        />
-
-        <input
-          className="input"
-          type="date"
-          value={toDate}
-          onChange={(e) => setToDate(e.target.value)}
-          title="Data final"
+          value={day}
+          onChange={(e) => setDay(e.target.value)}
+          title="Filtrar por dia"
         />
 
         <button className="btn ghost" type="button" onClick={loadLogs}>
@@ -189,7 +173,7 @@ export default function EmployeeLogs() {
       </div>
 
       <div style={{ marginTop: 10, color: colors.sub, fontSize: 12, fontWeight: 700 }}>
-        Dica: pra ver o dia inteiro, selecione Data Inicial e Data Final iguais.
+        Dica: selecione um dia pra ver só aquele dia. (Deixe vazio pra ver tudo.)
       </div>
 
       <div style={{ marginTop: 18 }}>
