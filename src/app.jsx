@@ -21,42 +21,66 @@ import Plants from "./pages/Plants";
 
 import { logActivity } from "./lib/logActivity";
 
-function shouldLogLogin(userId) {
-  if (!userId) return false;
+// ✅ dedupe por sessão do browser + evento
+function makeDedupeKey(type, userId) {
+  const sidKey = "activity_session_id";
+  let sid = sessionStorage.getItem(sidKey);
 
-  const key = `last_login_log_${userId}`;
-  const last = Number(sessionStorage.getItem(key) || "0");
-  const now = Date.now();
+  if (!sid) {
+    sid = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    sessionStorage.setItem(sidKey, sid);
+  }
 
-  // não loga de novo se já logou nos últimos 10s
-  if (now - last < 10_000) return false;
-
-  sessionStorage.setItem(key, String(now));
-  return true;
+  // exemplo: LOGIN:<userId>:<sid>
+  return `${String(type).toUpperCase()}:${userId || "anon"}:${sid}`;
 }
 
 export default function App() {
   const subscribedRef = useRef(false);
 
   useEffect(() => {
-    // ✅ evita criar 2 listeners no dev com StrictMode
+    // ✅ evita duplicar listener no dev (StrictMode)
     if (subscribedRef.current) return;
     subscribedRef.current = true;
 
+    let isAlive = true;
+
+    // ✅ se já estiver logado quando abrir/atualizar, registra LOGIN 1x
+    (async () => {
+      try {
+        const { data } = await supabase.auth.getSession();
+        const user = data?.session?.user;
+        if (!isAlive || !user?.id) return;
+
+        await logActivity("LOGIN", {
+          userId: user.id,
+          email: user.email,
+          dedupeKey: makeDedupeKey("LOGIN", user.id),
+          extra: { source: "app_boot" },
+        }).catch(() => {});
+      } catch {
+        // ignora
+      }
+    })();
+
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      // ✅ LOGA SÓ LOGIN (logout fica no botão do dashboard)
       if (event === "SIGNED_IN") {
         const userId = session?.user?.id || null;
         const email = session?.user?.email || null;
+        if (!userId) return;
 
-        if (!shouldLogLogin(userId)) return;
-
-        logActivity("LOGIN", { userId, email }).catch((e) => {
-          console.warn("Falha ao registrar LOGIN:", e?.message || e);
-        });
+        logActivity("LOGIN", {
+          userId,
+          email,
+          dedupeKey: makeDedupeKey("LOGIN", userId),
+          extra: { source: "auth_event" },
+        }).catch(() => {});
       }
     });
 
     return () => {
+      isAlive = false;
       listener?.subscription?.unsubscribe?.();
       subscribedRef.current = false;
     };
@@ -147,3 +171,8 @@ export default function App() {
     </Routes>
   );
 }
+logActivity("LOGIN", {
+  userId,
+  email,
+  dedupeKey: `login:${userId || "anon"}:${Date.now()}`, // ✅ único
+}).catch((e) => console.warn("Falha ao registrar LOGIN:", e));

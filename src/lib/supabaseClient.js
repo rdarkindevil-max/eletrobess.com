@@ -1,3 +1,4 @@
+// src/lib/supabaseClient.js
 import { createClient } from "@supabase/supabase-js";
 
 const supabaseUrl = (import.meta.env.VITE_SUPABASE_URL || "").trim();
@@ -18,17 +19,20 @@ if (!supabaseAnonKey) {
   );
 }
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
+// ✅ singleton (evita duplicar client com HMR/StrictMode)
+const globalKey = "__eletrobess_supabase__";
 
-    // ✅ em SPA geralmente deixa false mesmo
-    detectSessionInUrl: false,
+function makeClient() {
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: false,
+      flowType: "pkce",
+      storage: localStorage,
+    },
+  });
+}
 
-    flowType: "pkce",
-
-    // ✅ ok
-    storage: localStorage,
-  },
-});
+export const supabase =
+  globalThis[globalKey] ?? (globalThis[globalKey] = makeClient());

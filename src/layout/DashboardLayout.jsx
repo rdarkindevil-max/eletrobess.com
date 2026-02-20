@@ -5,6 +5,19 @@ import { supabase } from "../lib/supabaseClient";
 import { logActivity } from "../lib/logActivity";
 import "./dashboard.css";
 
+// ✅ dedupe por sessão do browser + evento
+function makeDedupeKey(type, userId) {
+  const sidKey = "activity_session_id";
+  let sid = sessionStorage.getItem(sidKey);
+
+  if (!sid) {
+    sid = `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    sessionStorage.setItem(sidKey, sid);
+  }
+
+  return `${String(type).toUpperCase()}:${userId || "anon"}:${sid}`;
+}
+
 export default function DashboardLayout() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
@@ -59,9 +72,7 @@ export default function DashboardLayout() {
       return [
         {
           group: "Cliente",
-          items: [
-            { to: "/app/client-portal", label: "Portal do Cliente", icon: "👤" },
-          ],
+          items: [{ to: "/app/client-portal", label: "Portal do Cliente", icon: "👤" }],
         },
       ];
     }
@@ -80,11 +91,7 @@ export default function DashboardLayout() {
           { to: "/app/plants", label: "Usinas", icon: "⚡" },
           { to: "/app/campo-tecnico", label: "Campo (Técnico)", icon: "🛠" },
           { to: "/app/client-portal", label: "Portal do Cliente", icon: "👤" },
-          {
-            to: "/app/employee-invites",
-            label: "Convites (Funcionários)",
-            icon: "📨",
-          },
+          { to: "/app/employee-invites", label: "Convites (Funcionários)", icon: "📨" },
           { to: "/app/logs", label: "Logs (Acessos)", icon: "🧾" },
         ],
       },
@@ -107,35 +114,39 @@ export default function DashboardLayout() {
     const q = search.trim().toLowerCase();
     if (!q) return NAV;
 
-    return NAV.map((g) => ({
-      ...g,
-      items: g.items.filter((i) => i.label.toLowerCase().includes(q)),
-    })).filter((g) => g.items.length > 0);
+    return NAV
+      .map((g) => ({
+        ...g,
+        items: g.items.filter((i) => i.label.toLowerCase().includes(q)),
+      }))
+      .filter((g) => g.items.length > 0);
   }, [search, NAV]);
 
-  // ✅ LOGOUT CORRIGIDO (com trava e log visível)
+  // ✅ LOGOUT 100%: loga antes + dedupeKey + não duplica
   async function logout() {
     if (loggingOut) return;
     setLoggingOut(true);
 
     try {
-      // 1) pega sessão atual (pra garantir userId/email)
-      const { data: s } = await supabase.auth.getSession();
-      const user = s?.session?.user;
+      // pega sessão ANTES do signOut (pra ter userId/email)
+      const { data } = await supabase.auth.getSession();
+      const user = data?.session?.user || null;
 
-      // 2) grava log antes do signOut
+      const userId = user?.id || null;
+      const email = user?.email || null;
+
       await logActivity("LOGOUT", {
-        userId: user?.id || null,
-        email: user?.email || null,
+        userId,
+        email,
+        dedupeKey: makeDedupeKey("LOGOUT", userId),
+        extra: { source: "dashboard_logout_button" },
       });
     } catch (e) {
-      console.error("Falha ao registrar LOGOUT:", e?.message || e);
-      // se quiser ver na hora:
-      // alert("Falha ao registrar LOGOUT: " + (e?.message || e));
+      console.warn("Falha ao registrar LOGOUT:", e?.message || e);
+      // não bloqueia o logout
     }
 
     try {
-      // 3) derruba sessão
       await supabase.auth.signOut();
     } finally {
       navigate("/login", { replace: true });
@@ -185,9 +196,7 @@ export default function DashboardLayout() {
                 <NavLink
                   key={it.to}
                   to={it.to}
-                  className={({ isActive }) =>
-                    `dash-link ${isActive ? "active" : ""}`
-                  }
+                  className={({ isActive }) => `dash-link ${isActive ? "active" : ""}`}
                 >
                   <span className="dash-ico">{it.icon}</span>
                   <span className="dash-label">{it.label}</span>
