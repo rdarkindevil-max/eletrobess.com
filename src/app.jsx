@@ -171,8 +171,3 @@ export default function App() {
     </Routes>
   );
 }
-logActivity("LOGIN", {
-  userId,
-  email,
-  dedupeKey: `login:${userId || "anon"}:${Date.now()}`, // ✅ único
-}).catch((e) => console.warn("Falha ao registrar LOGIN:", e));

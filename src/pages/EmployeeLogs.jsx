@@ -48,6 +48,20 @@ function Badge({ children, tone = "default" }) {
   );
 }
 
+// helper: compara YYYY-MM-DD no fuso local (pt-BR)
+function toLocalYMD(dateLike) {
+  try {
+    const d = new Date(dateLike);
+    if (Number.isNaN(d.getTime())) return "";
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${dd}`;
+  } catch {
+    return "";
+  }
+}
+
 export default function EmployeeLogs() {
   const [loading, setLoading] = useState(true);
   const [errMsg, setErrMsg] = useState("");
@@ -57,7 +71,7 @@ export default function EmployeeLogs() {
   const [type, setType] = useState("all"); // all | LOGIN | LOGOUT
   const [limit, setLimit] = useState(50);
 
-  // ✅ 1 calendário só (filtra 1 dia)
+  // ✅ 1 calendário só (filtra 1 dia) — agora filtra no FRONT pra não dar bug de UTC
   const [day, setDay] = useState(""); // YYYY-MM-DD
 
   const loadLogs = async () => {
@@ -73,19 +87,16 @@ export default function EmployeeLogs() {
 
       if (type !== "all") query = query.eq("type", type);
 
-      // ✅ filtro por dia inteiro (00:00:00 até 23:59:59.999)
-      if (day) {
-        const start = new Date(`${day}T00:00:00`);
-        const end = new Date(`${day}T23:59:59.999`);
-        query = query.gte("created_at", start.toISOString()).lte("created_at", end.toISOString());
-      }
-
       const { data, error } = await query;
       if (error) throw error;
 
       setRows(data || []);
     } catch (e) {
-      setErrMsg(e?.message || "Erro ao carregar logs");
+      const msg =
+        e?.message ||
+        e?.error_description ||
+        "Erro ao carregar logs (verifique RLS/policies no Supabase)";
+      setErrMsg(msg);
       setRows([]);
     } finally {
       setLoading(false);
@@ -95,20 +106,29 @@ export default function EmployeeLogs() {
   useEffect(() => {
     loadLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, limit, day]);
+  }, [type, limit]);
 
-  // busca local por texto (email, ip etc)
+  // ✅ filtro por dia + busca por texto (tudo local pra evitar UTC)
   const filtered = useMemo(() => {
+    let list = rows || [];
+
+    // filtro por dia no FRONT (fuso local)
+    if (day) {
+      list = list.filter((r) => toLocalYMD(r?.created_at) === day);
+    }
+
+    // busca por texto
     const qq = q.trim().toLowerCase();
-    if (!qq) return rows;
-    return (rows || []).filter((r) => {
+    if (!qq) return list;
+
+    return list.filter((r) => {
       const blob = [r?.email, r?.type, r?.ip, r?.user_id, r?.user_agent]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
       return blob.includes(qq);
     });
-  }, [rows, q]);
+  }, [rows, q, day]);
 
   return (
     <div className="p-6">

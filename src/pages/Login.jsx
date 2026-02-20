@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Turnstile } from "@marsidev/react-turnstile";
 import { supabase } from "../lib/supabaseClient";
+import { logActivity } from "../lib/logActivity"; // ✅ ADICIONADO
 import "./login.css";
 
 export default function Login() {
@@ -151,6 +152,22 @@ export default function Login() {
         });
         setCaptchaToken("");
         return;
+      }
+
+      // ✅ REGISTRA LOGIN (PASSANDO userId e email)
+      try {
+        const { data: ud } = await supabase.auth.getUser();
+        const user = ud?.user;
+        if (user) {
+          await logActivity("LOGIN", {
+            userId: user.id,
+            email: user.email,
+            // dedupeKey opcional (se você tiver unique no banco)
+            // dedupeKey: `LOGIN:${user.id}:${new Date().toISOString().slice(0,10)}`
+          });
+        }
+      } catch (e2) {
+        console.warn("Falha ao registrar LOGIN em activity_logs:", e2);
       }
 
       await acceptInviteIfAny();
@@ -411,7 +428,6 @@ export default function Login() {
                         {captchaError}
                       </div>
                     )}
-
                   </>
                 )}
               </div>

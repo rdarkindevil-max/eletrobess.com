@@ -25,12 +25,19 @@ export async function logActivity(type, meta = {}) {
     dedupe_key: meta.dedupeKey ?? null,
   };
 
-  // ✅ se não passar dedupeKey, deixa null (vai inserir normal)
-  // (pra dedupe funcionar, você PRECISA ter UNIQUE(dedupe_key) no banco)
   const { error } = await supabase
     .from("activity_logs")
     .upsert(payload, { onConflict: "dedupe_key", ignoreDuplicates: true });
 
-  if (error) throw error;
+  if (error) {
+    console.error("logActivity error:", {
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+      payload,
+    });
+    throw error;
+  }
   return true;
 }
