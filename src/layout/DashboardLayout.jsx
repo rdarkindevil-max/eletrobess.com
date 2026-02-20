@@ -2,6 +2,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { supabase } from "../lib/supabaseClient";
+import { logActivity } from "../lib/logActivity";
 import "./dashboard.css";
 
 export default function DashboardLayout() {
@@ -52,7 +53,6 @@ export default function DashboardLayout() {
 
   // ✅ NAV baseado no role
   const NAV = useMemo(() => {
-    // cliente: só portal
     if (isClient) {
       return [
         {
@@ -62,7 +62,6 @@ export default function DashboardLayout() {
       ];
     }
 
-    // staff/admin
     const base = [
       {
         group: "Geral",
@@ -78,12 +77,11 @@ export default function DashboardLayout() {
           { to: "/app/campo-tecnico", label: "Campo (Técnico)", icon: "🛠" },
           { to: "/app/client-portal", label: "Portal do Cliente", icon: "👤" },
           { to: "/app/employee-invites", label: "Convites (Funcionários)", icon: "📨" },
-          { to: "/app/logs", label: "Logs (Acessos)", icon: "🧾" }, // ✅ NOVO
+          { to: "/app/logs", label: "Logs (Acessos)", icon: "🧾" },
         ],
       },
     ];
 
-    // admin extra
     if (isAdmin) {
       base.splice(1, 0, {
         group: "Admin",
@@ -109,12 +107,27 @@ export default function DashboardLayout() {
       .filter((g) => g.items.length > 0);
   }, [search, NAV]);
 
+  // ✅ LOGOUT CORRIGIDO: pega a sessão ANTES de derrubar
   async function logout() {
+    // 1) pega sessão atual (pra garantir userId/email)
+    const { data: s } = await supabase.auth.getSession();
+    const user = s?.session?.user;
+
+    // 2) grava log antes do signOut
+    try {
+      await logActivity("LOGOUT", {
+        userId: user?.id || null,
+        email: user?.email || null,
+      });
+    } catch (e) {
+      console.warn("Falha ao registrar LOGOUT:", e?.message || e);
+    }
+
+    // 3) derruba sessão
     await supabase.auth.signOut();
     navigate("/login", { replace: true });
   }
 
-  // ✅ Enquanto carrega role
   if (loadingRole) {
     return (
       <div className="dash-root">
@@ -172,8 +185,12 @@ export default function DashboardLayout() {
           <div className="dash-statusCard">
             <div className="dash-statusIcon">⚡</div>
             <div>
-              <div className="dash-statusTitle">{isClient ? "Área do Cliente" : "Sistema online"}</div>
-              <div className="dash-statusValue">{isClient ? "Acesso restrito ao portal" : "100% operacional"}</div>
+              <div className="dash-statusTitle">
+                {isClient ? "Área do Cliente" : "Sistema online"}
+              </div>
+              <div className="dash-statusValue">
+                {isClient ? "Acesso restrito ao portal" : "100% operacional"}
+              </div>
             </div>
           </div>
         </div>
@@ -181,7 +198,11 @@ export default function DashboardLayout() {
 
       <main className="dash-main">
         <header className="dash-topbar">
-          <button className="dash-menuBtn" onClick={() => setMenuOpen((p) => !p)} type="button">
+          <button
+            className="dash-menuBtn"
+            onClick={() => setMenuOpen((p) => !p)}
+            type="button"
+          >
             ☰
           </button>
 
