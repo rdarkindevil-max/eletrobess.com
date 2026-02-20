@@ -13,6 +13,8 @@ export default function DashboardLayout() {
   const [role, setRole] = useState("client");
   const [loadingRole, setLoadingRole] = useState(true);
 
+  const [loggingOut, setLoggingOut] = useState(false);
+
   // ✅ Carrega role do usuário (profiles.role)
   useEffect(() => {
     let alive = true;
@@ -57,7 +59,9 @@ export default function DashboardLayout() {
       return [
         {
           group: "Cliente",
-          items: [{ to: "/app/client-portal", label: "Portal do Cliente", icon: "👤" }],
+          items: [
+            { to: "/app/client-portal", label: "Portal do Cliente", icon: "👤" },
+          ],
         },
       ];
     }
@@ -76,7 +80,11 @@ export default function DashboardLayout() {
           { to: "/app/plants", label: "Usinas", icon: "⚡" },
           { to: "/app/campo-tecnico", label: "Campo (Técnico)", icon: "🛠" },
           { to: "/app/client-portal", label: "Portal do Cliente", icon: "👤" },
-          { to: "/app/employee-invites", label: "Convites (Funcionários)", icon: "📨" },
+          {
+            to: "/app/employee-invites",
+            label: "Convites (Funcionários)",
+            icon: "📨",
+          },
           { to: "/app/logs", label: "Logs (Acessos)", icon: "🧾" },
         ],
       },
@@ -99,33 +107,40 @@ export default function DashboardLayout() {
     const q = search.trim().toLowerCase();
     if (!q) return NAV;
 
-    return NAV
-      .map((g) => ({
-        ...g,
-        items: g.items.filter((i) => i.label.toLowerCase().includes(q)),
-      }))
-      .filter((g) => g.items.length > 0);
+    return NAV.map((g) => ({
+      ...g,
+      items: g.items.filter((i) => i.label.toLowerCase().includes(q)),
+    })).filter((g) => g.items.length > 0);
   }, [search, NAV]);
 
-  // ✅ LOGOUT CORRIGIDO: pega a sessão ANTES de derrubar
+  // ✅ LOGOUT CORRIGIDO (com trava e log visível)
   async function logout() {
-    // 1) pega sessão atual (pra garantir userId/email)
-    const { data: s } = await supabase.auth.getSession();
-    const user = s?.session?.user;
+    if (loggingOut) return;
+    setLoggingOut(true);
 
-    // 2) grava log antes do signOut
     try {
+      // 1) pega sessão atual (pra garantir userId/email)
+      const { data: s } = await supabase.auth.getSession();
+      const user = s?.session?.user;
+
+      // 2) grava log antes do signOut
       await logActivity("LOGOUT", {
         userId: user?.id || null,
         email: user?.email || null,
       });
     } catch (e) {
-      console.warn("Falha ao registrar LOGOUT:", e?.message || e);
+      console.error("Falha ao registrar LOGOUT:", e?.message || e);
+      // se quiser ver na hora:
+      // alert("Falha ao registrar LOGOUT: " + (e?.message || e));
     }
 
-    // 3) derruba sessão
-    await supabase.auth.signOut();
-    navigate("/login", { replace: true });
+    try {
+      // 3) derruba sessão
+      await supabase.auth.signOut();
+    } finally {
+      navigate("/login", { replace: true });
+      setLoggingOut(false);
+    }
   }
 
   if (loadingRole) {
@@ -170,7 +185,9 @@ export default function DashboardLayout() {
                 <NavLink
                   key={it.to}
                   to={it.to}
-                  className={({ isActive }) => `dash-link ${isActive ? "active" : ""}`}
+                  className={({ isActive }) =>
+                    `dash-link ${isActive ? "active" : ""}`
+                  }
                 >
                   <span className="dash-ico">{it.icon}</span>
                   <span className="dash-label">{it.label}</span>
@@ -214,8 +231,16 @@ export default function DashboardLayout() {
             <button className="dash-iconBtn" title="Notificações" type="button">
               🔔
             </button>
-            <button className="dash-avatar" type="button" onClick={logout} title="Sair">
-              Sair
+
+            <button
+              className="dash-avatar"
+              type="button"
+              onClick={logout}
+              title="Sair"
+              disabled={loggingOut}
+              style={{ opacity: loggingOut ? 0.7 : 1 }}
+            >
+              {loggingOut ? "Saindo..." : "Sair"}
             </button>
           </div>
         </header>

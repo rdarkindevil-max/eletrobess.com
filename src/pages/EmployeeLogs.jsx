@@ -47,6 +47,13 @@ function Badge({ children, tone = "default" }) {
   );
 }
 
+function addDaysISO(dateStr, days) {
+  // dateStr: "YYYY-MM-DD"
+  const d = new Date(`${dateStr}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return d.toISOString(); // UTC ISO
+}
+
 export default function EmployeeLogs() {
   const [loading, setLoading] = useState(true);
   const [errMsg, setErrMsg] = useState("");
@@ -56,9 +63,14 @@ export default function EmployeeLogs() {
   const [type, setType] = useState("all"); // all | LOGIN | LOGOUT
   const [limit, setLimit] = useState(50);
 
+  // ✅ Calendário (filtro server-side)
+  const [fromDate, setFromDate] = useState(""); // YYYY-MM-DD
+  const [toDate, setToDate] = useState("");     // YYYY-MM-DD
+
   const loadLogs = async () => {
     setErrMsg("");
     setLoading(true);
+
     try {
       let query = supabase
         .from("activity_logs")
@@ -67,6 +79,18 @@ export default function EmployeeLogs() {
         .limit(limit);
 
       if (type !== "all") query = query.eq("type", type);
+
+      // ✅ filtro por data
+      // fromDate = >= fromDate 00:00
+      if (fromDate) {
+        query = query.gte("created_at", `${fromDate}T00:00:00.000Z`);
+      }
+
+      // toDate = < (toDate + 1 dia) 00:00  (pega o dia inteiro)
+      if (toDate) {
+        const nextDayISO = addDaysISO(toDate, 1);
+        query = query.lt("created_at", nextDayISO);
+      }
 
       const { data, error } = await query;
       if (error) throw error;
@@ -83,19 +107,14 @@ export default function EmployeeLogs() {
   useEffect(() => {
     loadLogs();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [type, limit]);
+  }, [type, limit, fromDate, toDate]);
 
+  // busca local por texto (email, ip etc)
   const filtered = useMemo(() => {
     const qq = q.trim().toLowerCase();
     if (!qq) return rows;
     return (rows || []).filter((r) => {
-      const blob = [
-        r?.email,
-        r?.type,
-        r?.ip,
-        r?.user_id,
-        r?.user_agent,
-      ]
+      const blob = [r?.email, r?.type, r?.ip, r?.user_id, r?.user_agent]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
@@ -124,9 +143,9 @@ export default function EmployeeLogs() {
         style={{
           marginTop: 16,
           display: "grid",
-          gridTemplateColumns: "1fr 180px 140px 160px",
+          gridTemplateColumns: "1fr 160px 140px 170px 170px 140px",
           gap: 10,
-          maxWidth: 980,
+          maxWidth: 1250,
         }}
       >
         <input
@@ -148,9 +167,29 @@ export default function EmployeeLogs() {
           <option value="200">200</option>
         </select>
 
+        <input
+          className="input"
+          type="date"
+          value={fromDate}
+          onChange={(e) => setFromDate(e.target.value)}
+          title="Data inicial"
+        />
+
+        <input
+          className="input"
+          type="date"
+          value={toDate}
+          onChange={(e) => setToDate(e.target.value)}
+          title="Data final"
+        />
+
         <button className="btn ghost" type="button" onClick={loadLogs}>
           Atualizar
         </button>
+      </div>
+
+      <div style={{ marginTop: 10, color: colors.sub, fontSize: 12, fontWeight: 700 }}>
+        Dica: pra ver o dia inteiro, selecione Data Inicial e Data Final iguais.
       </div>
 
       <div style={{ marginTop: 18 }}>
@@ -163,6 +202,7 @@ export default function EmployeeLogs() {
             {filtered.map((it) => {
               const t = String(it.type || "").toUpperCase();
               const badgeTone = t === "LOGIN" ? "ok" : t === "LOGOUT" ? "bad" : "gray";
+
               return (
                 <div
                   key={it.id}
@@ -204,9 +244,7 @@ export default function EmployeeLogs() {
       </div>
 
       <div style={{ marginTop: 12, color: colors.sub, fontSize: 12, fontWeight: 700 }}>
-        Obs: a tabela esperada é <b style={{ color: colors.text }}>activity_logs</b> com colunas como{" "}
-        <b style={{ color: colors.text }}>type</b>, <b style={{ color: colors.text }}>created_at</b>,{" "}
-        <b style={{ color: colors.text }}>email</b>/<b style={{ color: colors.text }}>user_id</b>.
+        Tabela: <b style={{ color: colors.text }}>activity_logs</b> (type, created_at, email/user_id)
       </div>
     </div>
   );

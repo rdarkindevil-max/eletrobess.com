@@ -1,4 +1,5 @@
-import React, { useEffect } from "react";
+// src/App.jsx
+import React, { useEffect, useRef } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { supabase } from "./lib/supabaseClient";
 
@@ -20,21 +21,44 @@ import Plants from "./pages/Plants";
 
 import { logActivity } from "./lib/logActivity";
 
-export default function App() {
-  useEffect(() => {
-    const { data: listener } = supabase.auth.onAuthStateChange((event) => {
-      if (event === "SIGNED_IN") {
-        logActivity("LOGIN").catch((e) =>
-          console.warn("Falha ao registrar LOGIN:", e?.message || e)
-        );
-      }
+function shouldLogLogin(userId) {
+  if (!userId) return false;
 
-      // ❌ não loga SIGNED_OUT aqui (sem token, RLS bloqueia)
-      // logout deve ser logado ANTES do signOut() no botão "Sair"
+  const key = `last_login_log_${userId}`;
+  const last = Number(sessionStorage.getItem(key) || "0");
+  const now = Date.now();
+
+  // não loga de novo se já logou nos últimos 10s
+  if (now - last < 10_000) return false;
+
+  sessionStorage.setItem(key, String(now));
+  return true;
+}
+
+export default function App() {
+  const subscribedRef = useRef(false);
+
+  useEffect(() => {
+    // ✅ evita criar 2 listeners no dev com StrictMode
+    if (subscribedRef.current) return;
+    subscribedRef.current = true;
+
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_IN") {
+        const userId = session?.user?.id || null;
+        const email = session?.user?.email || null;
+
+        if (!shouldLogLogin(userId)) return;
+
+        logActivity("LOGIN", { userId, email }).catch((e) => {
+          console.warn("Falha ao registrar LOGIN:", e?.message || e);
+        });
+      }
     });
 
     return () => {
       listener?.subscription?.unsubscribe?.();
+      subscribedRef.current = false;
     };
   }, []);
 
@@ -56,7 +80,6 @@ export default function App() {
               </RequireRole>
             }
           />
-
           <Route
             path="/app/clients"
             element={
@@ -65,7 +88,6 @@ export default function App() {
               </RequireRole>
             }
           />
-
           <Route
             path="/app/campo-tecnico"
             element={
@@ -74,7 +96,6 @@ export default function App() {
               </RequireRole>
             }
           />
-
           <Route
             path="/app/plants"
             element={
@@ -110,7 +131,6 @@ export default function App() {
               </RequireRole>
             }
           />
-
           <Route
             path="/app/integrations"
             element={
