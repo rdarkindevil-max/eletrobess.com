@@ -38,6 +38,9 @@ function makeDedupeKey(type, userId) {
 export default function App() {
   const subscribedRef = useRef(false);
 
+  // ✅ guarda o último usuário visto (pra conseguir registrar LOGOUT quando session vier null)
+  const lastUserRef = useRef({ userId: null, email: null });
+
   useEffect(() => {
     // ✅ evita duplicar listener no dev (StrictMode)
     if (subscribedRef.current) return;
@@ -52,6 +55,9 @@ export default function App() {
         const user = data?.session?.user;
         if (!isAlive || !user?.id) return;
 
+        // salva último user
+        lastUserRef.current = { userId: user.id, email: user.email ?? null };
+
         await logActivity("LOGIN", {
           userId: user.id,
           email: user.email,
@@ -64,7 +70,13 @@ export default function App() {
     })();
 
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
-      // ✅ LOGA SÓ LOGIN (logout fica no botão do dashboard)
+      // ✅ sempre atualiza o último user quando tiver session
+      const u = session?.user;
+      if (u?.id) {
+        lastUserRef.current = { userId: u.id, email: u.email ?? null };
+      }
+
+      // ✅ LOGIN
       if (event === "SIGNED_IN") {
         const userId = session?.user?.id || null;
         const email = session?.user?.email || null;
@@ -74,6 +86,20 @@ export default function App() {
           userId,
           email,
           dedupeKey: makeDedupeKey("LOGIN", userId),
+          extra: { source: "auth_event" },
+        }).catch(() => {});
+      }
+
+      // ✅ LOGOUT (session normalmente vem null aqui)
+      if (event === "SIGNED_OUT") {
+        const { userId, email } = lastUserRef.current || {};
+        if (!userId) return;
+
+        // dedupe diferente pra não colidir com LOGIN
+        logActivity("LOGOUT", {
+          userId,
+          email,
+          dedupeKey: makeDedupeKey("LOGOUT", userId),
           extra: { source: "auth_event" },
         }).catch(() => {});
       }
