@@ -1,19 +1,21 @@
 import { supabase } from "./supabaseClient";
 
-export async function logActivity(action) {
-  const { data } = await supabase.auth.getUser();
-  const user = data?.user;
-
-  if (!user) return;
-
+export async function logActivity(type) {
   try {
-    await supabase.from("employee_logs").insert({
-      user_id: user.id,
-      email: user.email,
-      action,
-      user_agent: navigator.userAgent,
-    });
-  } catch (err) {
-    console.error("Erro ao salvar log:", err.message);
+    const { data: auth } = await supabase.auth.getUser();
+    const user = auth?.user;
+
+    const payload = {
+      type, // "LOGIN" | "LOGOUT"
+      user_id: user?.id ?? null,
+      email: user?.email ?? null,
+      ip: null,
+      user_agent: typeof navigator !== "undefined" ? navigator.userAgent : null,
+    };
+
+    const { error } = await supabase.from("activity_logs").insert(payload);
+    if (error) console.error("logActivity error:", error.message);
+  } catch (e) {
+    console.error("logActivity exception:", e?.message || e);
   }
 }
