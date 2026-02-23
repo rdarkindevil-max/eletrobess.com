@@ -91,9 +91,7 @@ function normalizeCategories(v) {
     try {
       const parsed = JSON.parse(s);
       if (Array.isArray(parsed)) {
-        return Array.from(
-          new Set(parsed.map(String).map((x) => x.trim()).filter(Boolean))
-        );
+        return Array.from(new Set(parsed.map(String).map((x) => x.trim()).filter(Boolean)));
       }
     } catch {}
 
@@ -112,6 +110,9 @@ function normalizeCategories(v) {
 
 /**
  * ✅ Rateio item:
+ * - docs: urls salvas
+ * - docs_files: arquivos locais selecionados (não vai pro banco)
+ * - docs_previews: objectURL local (não vai pro banco)
  */
 function normalizeRateioItem(v) {
   const base = {
@@ -122,6 +123,7 @@ function normalizeRateioItem(v) {
     endereco_geradora: "",
     docs: [], // urls
     docs_files: [], // files novos (não vai pro banco)
+    docs_previews: [], // objectURL preview (não vai pro banco)
   };
 
   if (v && typeof v === "object" && !Array.isArray(v)) {
@@ -131,6 +133,7 @@ function normalizeRateioItem(v) {
       id: v.id || uid(),
       docs: Array.isArray(v.docs) ? v.docs : [],
       docs_files: [],
+      docs_previews: [],
     };
   }
 
@@ -144,6 +147,7 @@ function normalizeRateioItem(v) {
           id: parsed.id || uid(),
           docs: Array.isArray(parsed.docs) ? parsed.docs : [],
           docs_files: [],
+          docs_previews: [],
         };
       }
     } catch {}
@@ -200,9 +204,7 @@ function normalizeClient(c) {
       ? [normalizeRateioItem({ ...safe.ufv_rateio_dados, id: uid() })]
       : [];
 
-  const rateios = normalizeJsonArray(safe.ufv_rateios, legacyRateio).map(
-    normalizeRateioItem
-  );
+  const rateios = normalizeJsonArray(safe.ufv_rateios, legacyRateio).map(normalizeRateioItem);
 
   return {
     id: safe.id ?? uid(),
@@ -274,17 +276,118 @@ function getEconomiaCliente(c) {
     return sum + (Number(it?.valor) || 0);
   }, 0);
 
-  // total em reais (não precisa recalcular por kWp)
+  // total em reais
   return totalCustos;
+}
+
+/** ✅ helpers preview */
+function isImageUrl(url) {
+  const u = String(url || "").toLowerCase();
+  return (
+    u.endsWith(".png") ||
+    u.endsWith(".jpg") ||
+    u.endsWith(".jpeg") ||
+    u.endsWith(".webp") ||
+    u.endsWith(".gif")
+  );
+}
+
+function isPdfUrl(url) {
+  const u = String(url || "").toLowerCase();
+  return u.endsWith(".pdf");
+}
+
+function PreviewGrid({ items }) {
+  if (!Array.isArray(items) || items.length === 0) return null;
+
+  return (
+    <div style={{ marginTop: 10, display: "flex", gap: 10, flexWrap: "wrap" }}>
+      {items.map((it, idx) => {
+        const src = it?.src;
+        const kind = it?.kind; // "image" | "pdf" | "link"
+        const name = it?.name || `Doc ${idx + 1}`;
+        if (!src) return null;
+
+        if (kind === "image") {
+          return (
+            <a
+              key={src + idx}
+              href={src}
+              target="_blank"
+              rel="noreferrer"
+              className="btn ghost"
+              style={{ padding: 8, height: "auto" }}
+              title="Abrir em nova aba"
+            >
+              <img
+                src={src}
+                alt={name}
+                style={{
+                  width: 180,
+                  height: 130,
+                  objectFit: "cover",
+                  borderRadius: 10,
+                  display: "block",
+                }}
+              />
+            </a>
+          );
+        }
+
+        if (kind === "pdf") {
+          return (
+            <div
+              key={src + idx}
+              style={{
+                width: 260,
+                border: "1px solid #e5e7eb",
+                borderRadius: 10,
+                overflow: "hidden",
+                background: "#fff",
+              }}
+              title="PDF"
+            >
+              <div
+                style={{
+                  padding: 8,
+                  borderBottom: "1px solid #e5e7eb",
+                  fontWeight: 700,
+                  color: "#000",
+                }}
+              >
+                PDF
+              </div>
+              <iframe src={src} title={name} style={{ width: "100%", height: 220, border: 0 }} />
+              <div style={{ padding: 8 }}>
+                <a className="btn ghost" href={src} target="_blank" rel="noreferrer">
+                  Abrir PDF
+                </a>
+              </div>
+            </div>
+          );
+        }
+
+        return (
+          <a
+            key={src + idx}
+            href={src}
+            target="_blank"
+            rel="noreferrer"
+            className="btn ghost"
+            style={{ height: 34 }}
+          >
+            Ver doc
+          </a>
+        );
+      })}
+    </div>
+  );
 }
 
 export default function Clients() {
   const navigate = useNavigate();
 
-  const initialFormState = useMemo(
-    () => normalizeClient({ status: "ENTRADA" }),
-    []
-  );
+  const initialFormState = useMemo(() => normalizeClient({ status: "ENTRADA" }), []);
 
   const [clients, setClients] = useState([]);
   const [formData, setFormData] = useState(initialFormState);
@@ -345,20 +448,11 @@ export default function Clients() {
 
   // UFV - CONSUMO
   const consumoValores = useMemo(
-    () =>
-      Object.values(formData.ufv_consumo_mensal || {}).map(
-        (v) => Number(v) || 0
-      ),
+    () => Object.values(formData.ufv_consumo_mensal || {}).map((v) => Number(v) || 0),
     [formData.ufv_consumo_mensal]
   );
-  const consumoAnual = useMemo(
-    () => consumoValores.reduce((a, b) => a + b, 0),
-    [consumoValores]
-  );
-  const consumoMedio = useMemo(
-    () => (consumoAnual / 12).toFixed(2),
-    [consumoAnual]
-  );
+  const consumoAnual = useMemo(() => consumoValores.reduce((a, b) => a + b, 0), [consumoValores]);
+  const consumoMedio = useMemo(() => (consumoAnual / 12).toFixed(2), [consumoAnual]);
 
   // UFV - GERAÇÃO
   const kwp = Number(formData.ufv_potencia_kwp || 0);
@@ -368,8 +462,7 @@ export default function Clients() {
 
   // FINANCEIRO (mantém os 3 principais pra exibir)
   const custoFornecedor = Number(
-    (formData.financeiro_custos || []).find((c) => c.tipo === "Equipamentos")
-      ?.valor || 0
+    (formData.financeiro_custos || []).find((c) => c.tipo === "Equipamentos")?.valor || 0
   );
   const custoServico = Number(
     (formData.financeiro_custos || []).find((c) => c.tipo === "Serviços")?.valor || 0
@@ -382,12 +475,12 @@ export default function Clients() {
   const servicoPorKwp = kwp > 0 ? custoServico / kwp : 0;
   const engenhariaPorKwp = kwp > 0 ? custoEngenharia / kwp : 0;
 
-  // ✅ CORRIGIDO: soma TODOS os custos (inclusive os adicionados manualmente)
+  // ✅ soma TODOS os custos
   const custoTotal = (formData.financeiro_custos || []).reduce((sum, it) => {
     return sum + (Number(it?.valor) || 0);
   }, 0);
 
-  // ✅ Total por kWp e Total em R$ agora consideram o TOTAL REAL
+  // ✅ Total por kWp e Total em R$ consideram o TOTAL REAL
   const totalPorKwp = kwp > 0 ? custoTotal / kwp : 0;
   const totalEmReais = custoTotal;
 
@@ -416,14 +509,13 @@ export default function Clients() {
     setIsFormOpen(true);
   };
 
-  const categories = useMemo(
-    () => normalizeCategories(formData.service_categories),
-    [formData.service_categories]
-  );
+  const categories = useMemo(() => normalizeCategories(formData.service_categories), [
+    formData.service_categories,
+  ]);
 
   const hasCategory = categories.length > 0;
 
-  // ✅ payload limpo (sem id e sem docs_files)
+  // ✅ payload limpo (sem id e sem docs_files/docs_previews)
   // ✅ salva service_category (compat) como a 1ª categoria
   const buildPayloadForDb = (fd) => {
     const { id: _ignoreId, ...rest } = fd || {};
@@ -434,18 +526,15 @@ export default function Clients() {
       service_categories: cats,
       service_category: cats[0] || "", // ✅ compat com a coluna antiga
       ufv_consumo_mensal: normalizeConsumoMensal(fd.ufv_consumo_mensal),
-      financeiro_custos: Array.isArray(fd.financeiro_custos)
-        ? fd.financeiro_custos
-        : [],
-      financeiro_pagamentos: Array.isArray(fd.financeiro_pagamentos)
-        ? fd.financeiro_pagamentos
-        : [],
+      financeiro_custos: Array.isArray(fd.financeiro_custos) ? fd.financeiro_custos : [],
+      financeiro_pagamentos: Array.isArray(fd.financeiro_pagamentos) ? fd.financeiro_pagamentos : [],
       ufv_rateios:
         fd.ufv_rateio === "SIM"
           ? (Array.isArray(fd.ufv_rateios) ? fd.ufv_rateios : []).map(
-              ({ docs_files, ...r }) => ({
+              ({ docs_files, docs_previews, ...r }) => ({
                 ...normalizeRateioItem(r),
                 docs_files: undefined,
+                docs_previews: undefined,
                 docs: Array.isArray(r.docs) ? r.docs : [],
               })
             )
@@ -493,9 +582,7 @@ export default function Clients() {
 
       // ✅ upload docs de cada rateio (se SIM)
       if (clientId && formData.ufv_rateio === "SIM") {
-        const rateios = Array.isArray(formData.ufv_rateios)
-          ? formData.ufv_rateios
-          : [];
+        const rateios = Array.isArray(formData.ufv_rateios) ? formData.ufv_rateios : [];
         let changed = false;
 
         const nextRateios = [];
@@ -511,10 +598,26 @@ export default function Clients() {
             });
 
             rr.docs = [...(Array.isArray(rr.docs) ? rr.docs : []), ...newUrls];
+
+            // ✅ limpa previews pra não vazar memória
+            (rr.docs_previews || []).forEach((u) => {
+              try {
+                URL.revokeObjectURL(u);
+              } catch {}
+            });
+
             rr.docs_files = [];
+            rr.docs_previews = [];
             changed = true;
           } else {
+            // ✅ também limpa previews se existirem
+            (rr.docs_previews || []).forEach((u) => {
+              try {
+                URL.revokeObjectURL(u);
+              } catch {}
+            });
             rr.docs_files = [];
+            rr.docs_previews = [];
           }
 
           nextRateios.push(rr);
@@ -522,7 +625,7 @@ export default function Clients() {
 
         // se teve upload, atualiza a coluna ufv_rateios
         if (changed) {
-          const toDb = nextRateios.map(({ docs_files, ...r }) => ({
+          const toDb = nextRateios.map(({ docs_files, docs_previews, ...r }) => ({
             ...r,
             docs: Array.isArray(r.docs) ? r.docs : [],
           }));
@@ -551,11 +654,7 @@ export default function Clients() {
   const handleDelete = async (id) => {
     setErrMsg("");
     try {
-      const { data, error } = await supabase
-        .from("clients")
-        .delete()
-        .eq("id", id)
-        .select("id");
+      const { data, error } = await supabase.from("clients").delete().eq("id", id).select("id");
       if (error) throw error;
 
       if (!data || data.length === 0) {
@@ -587,8 +686,7 @@ export default function Clients() {
           .filter(Boolean)
           .some((v) => String(v).toLowerCase().includes(qq));
 
-      const matchStatus =
-        fStatus === "all" || (c?.status || "ENTRADA") === fStatus;
+      const matchStatus = fStatus === "all" || (c?.status || "ENTRADA") === fStatus;
       const matchType = fType === "all" || (c?.type || "") === fType;
 
       return matchQ && matchStatus && matchType;
@@ -633,11 +731,7 @@ export default function Clients() {
             />
           </div>
 
-          <select
-            className="select2"
-            value={fType}
-            onChange={(e) => setFType(e.target.value)}
-          >
+          <select className="select2" value={fType} onChange={(e) => setFType(e.target.value)}>
             <option value="all">Todos os tipos</option>
             <option value="RESIDENCIAL">Residencial</option>
             <option value="COMERCIAL">Comercial</option>
@@ -645,11 +739,7 @@ export default function Clients() {
             <option value="RURAL">Rural</option>
           </select>
 
-          <select
-            className="select2"
-            value={fStatus}
-            onChange={(e) => setFStatus(e.target.value)}
-          >
+          <select className="select2" value={fStatus} onChange={(e) => setFStatus(e.target.value)}>
             <option value="all">Todos os status</option>
             <option value="ENTRADA">Entrada</option>
             <option value="FECHADO">Fechado</option>
@@ -660,9 +750,7 @@ export default function Clients() {
         <div className="tableCard2">
           <div className="tableHead2">
             <div className="tableTitle2">Clientes</div>
-            <div className="tableMeta2">
-              {loading ? "Carregando..." : `${filtered.length} resultado(s)`}
-            </div>
+            <div className="tableMeta2">{loading ? "Carregando..." : `${filtered.length} resultado(s)`}</div>
           </div>
 
           <div className="p-4">
@@ -679,17 +767,13 @@ export default function Clients() {
                   const consumo = getConsumoMedioCliente(c);
 
                   // ✅ normaliza de verdade (array/json/string/csv)
-                  const cats = normalizeCategories(
-                    c.service_categories ?? c.service_category ?? ""
-                  );
+                  const cats = normalizeCategories(c.service_categories ?? c.service_category ?? "");
 
                   return (
                     <div key={c.id} className="clientCard2">
                       <div className="clientTop2">
                         <div className="clientLeft2">
-                          <div className="avatar2">
-                            {(c.name || "C")[0]?.toUpperCase()}
-                          </div>
+                          <div className="avatar2">{(c.name || "C")[0]?.toUpperCase()}</div>
 
                           <div className="clientText2">
                             <div className="clientName2">{c.name || "-"}</div>
@@ -708,15 +792,9 @@ export default function Clients() {
                           {c.city || "—"}
                           {c.state ? `, ${c.state}` : ""}
                         </div>
-                        <div className="chip2">
-                          {cats.length ? cats.join(", ") : "—"}
-                        </div>
-                        <div className="chip2">
-                          {consumo ? `${consumo.toFixed(0)} kWh` : "—"}
-                        </div>
-                        <div className="clientTotal2">
-                          {total ? formatBRL(total) : "—"}
-                        </div>
+                        <div className="chip2">{cats.length ? cats.join(", ") : "—"}</div>
+                        <div className="chip2">{consumo ? `${consumo.toFixed(0)} kWh` : "—"}</div>
+                        <div className="clientTotal2">{total ? formatBRL(total) : "—"}</div>
                       </div>
 
                       <div className="clientActions2">
@@ -753,8 +831,7 @@ export default function Clients() {
           </div>
 
           <div className="border-t px-4 py-3 text-xs text-muted-foreground">
-            Dica: use os filtros pra priorizar follow-up e organizar funil
-            comercial.
+            Dica: use os filtros pra priorizar follow-up e organizar funil comercial.
           </div>
         </div>
 
@@ -1050,14 +1127,20 @@ export default function Clients() {
                                 onChange={(v) => {
                                   setField("ufv_rateio", v);
                                   if (v !== "SIM") {
+                                    // ✅ revoga previews se fechar
+                                    (formData.ufv_rateios || []).forEach((ri) => {
+                                      (ri.docs_previews || []).forEach((u) => {
+                                        try {
+                                          URL.revokeObjectURL(u);
+                                        } catch {}
+                                      });
+                                    });
+
                                     setFormData((p) => ({ ...p, ufv_rateios: [] }));
                                   } else {
                                     setFormData((p) => ({
                                       ...p,
-                                      ufv_rateios:
-                                        (p.ufv_rateios || []).length
-                                          ? p.ufv_rateios
-                                          : [newRateioItem()],
+                                      ufv_rateios: (p.ufv_rateios || []).length ? p.ufv_rateios : [newRateioItem()],
                                     }));
                                   }
                                 }}
@@ -1071,7 +1154,9 @@ export default function Clients() {
                               {formData.ufv_rateio === "SIM" && (
                                 <div className="full" style={{ marginTop: 10 }}>
                                   <div className="section">
-                                    <div className="sectionTitle">Rateios</div>
+                                    <div className="sectionTitle" style={{ color: "#000" }}>
+                                      Rateios
+                                    </div>
                                     <div className="sectionBody">
                                       {(formData.ufv_rateios || []).map((r, idx) => (
                                         <div
@@ -1089,6 +1174,7 @@ export default function Clients() {
                                               justifyContent: "space-between",
                                               alignItems: "center",
                                               marginBottom: 10,
+                                              color: "#000",
                                             }}
                                           >
                                             <b>Rateio #{idx + 1}</b>
@@ -1098,9 +1184,7 @@ export default function Clients() {
                                               onClick={() =>
                                                 setFormData((p) => ({
                                                   ...p,
-                                                  ufv_rateios: (p.ufv_rateios || []).filter(
-                                                    (x) => x.id !== r.id
-                                                  ),
+                                                  ufv_rateios: (p.ufv_rateios || []).filter((x) => x.id !== r.id),
                                                 }))
                                               }
                                             >
@@ -1116,9 +1200,7 @@ export default function Clients() {
                                                 setFormData((p) => ({
                                                   ...p,
                                                   ufv_rateios: (p.ufv_rateios || []).map((x) =>
-                                                    x.id === r.id
-                                                      ? { ...x, numero_cliente: v }
-                                                      : x
+                                                    x.id === r.id ? { ...x, numero_cliente: v } : x
                                                   ),
                                                 }))
                                               }
@@ -1158,9 +1240,7 @@ export default function Clients() {
                                                 setFormData((p) => ({
                                                   ...p,
                                                   ufv_rateios: (p.ufv_rateios || []).map((x) =>
-                                                    x.id === r.id
-                                                      ? { ...x, endereco_geradora: v }
-                                                      : x
+                                                    x.id === r.id ? { ...x, endereco_geradora: v } : x
                                                   ),
                                                 }))
                                               }
@@ -1177,38 +1257,49 @@ export default function Clients() {
                                                   const files = Array.from(e.target.files || []);
                                                   setFormData((p) => ({
                                                     ...p,
-                                                    ufv_rateios: (p.ufv_rateios || []).map((x) =>
-                                                      x.id === r.id
-                                                        ? { ...x, docs_files: files }
-                                                        : x
-                                                    ),
+                                                    ufv_rateios: (p.ufv_rateios || []).map((x) => {
+                                                      if (x.id !== r.id) return x;
+
+                                                      // ✅ revoga previews antigos
+                                                      (x.docs_previews || []).forEach((u) => {
+                                                        try {
+                                                          URL.revokeObjectURL(u);
+                                                        } catch {}
+                                                      });
+
+                                                      const previews = files.map((f) => URL.createObjectURL(f));
+
+                                                      return {
+                                                        ...x,
+                                                        docs_files: files,
+                                                        docs_previews: previews,
+                                                      };
+                                                    }),
                                                   }));
                                                 }}
                                               />
 
-                                              {Array.isArray(r.docs) && r.docs.length > 0 && (
-                                                <div
-                                                  style={{
-                                                    marginTop: 10,
-                                                    display: "flex",
-                                                    gap: 8,
-                                                    flexWrap: "wrap",
-                                                  }}
-                                                >
-                                                  {r.docs.map((url) => (
-                                                    <a
-                                                      key={url}
-                                                      href={url}
-                                                      target="_blank"
-                                                      rel="noreferrer"
-                                                      className="btn ghost"
-                                                      style={{ height: 34 }}
-                                                    >
-                                                      Ver doc
-                                                    </a>
-                                                  ))}
-                                                </div>
-                                              )}
+                                              {/* ✅ previews locais (antes de salvar) */}
+                                              <PreviewGrid
+                                                items={(r.docs_files || []).map((f, i2) => ({
+                                                  src: (r.docs_previews || [])[i2],
+                                                  name: f?.name || `Arquivo ${i2 + 1}`,
+                                                  kind: String(f?.type || "").startsWith("image/")
+                                                    ? "image"
+                                                    : String(f?.type || "") === "application/pdf"
+                                                    ? "pdf"
+                                                    : "link",
+                                                }))}
+                                              />
+
+                                              {/* ✅ docs já salvos (urls) */}
+                                              <PreviewGrid
+                                                items={(r.docs || []).map((url, i3) => ({
+                                                  src: url,
+                                                  name: `Documento ${i3 + 1}`,
+                                                  kind: isImageUrl(url) ? "image" : isPdfUrl(url) ? "pdf" : "link",
+                                                }))}
+                                              />
                                             </div>
                                           </div>
                                         </div>
@@ -1278,14 +1369,8 @@ export default function Clients() {
                                 </div>
                               </div>
 
-                              <ReadOnlyField
-                                label="Consumo Anual (kWh)"
-                                value={String(consumoAnual)}
-                              />
-                              <ReadOnlyField
-                                label="Média Mensal (kWh)"
-                                value={String(consumoMedio)}
-                              />
+                              <ReadOnlyField label="Consumo Anual (kWh)" value={String(consumoAnual)} />
+                              <ReadOnlyField label="Média Mensal (kWh)" value={String(consumoMedio)} />
                               <ReadOnlyField
                                 label="Geração Mensal Estimada (kWh)"
                                 value={String(geracaoMensal.toFixed(2))}
@@ -1350,9 +1435,7 @@ export default function Clients() {
                             onClick={() =>
                               setFormData((p) => ({
                                 ...p,
-                                financeiro_custos: p.financeiro_custos.filter(
-                                  (it) => it.id !== c.id
-                                ),
+                                financeiro_custos: p.financeiro_custos.filter((it) => it.id !== c.id),
                               }))
                             }
                           >
@@ -1367,10 +1450,7 @@ export default function Clients() {
                         onClick={() =>
                           setFormData((p) => ({
                             ...p,
-                            financeiro_custos: [
-                              ...p.financeiro_custos,
-                              { id: uid(), tipo: "", valor: "" },
-                            ],
+                            financeiro_custos: [...p.financeiro_custos, { id: uid(), tipo: "", valor: "" }],
                           }))
                         }
                       >
@@ -1480,19 +1560,14 @@ export default function Clients() {
                         onClick={() =>
                           setFormData((p) => ({
                             ...p,
-                            financeiro_pagamentos: [
-                              ...p.financeiro_pagamentos,
-                              { id: uid(), forma: "PIX", pct: 0 },
-                            ],
+                            financeiro_pagamentos: [...p.financeiro_pagamentos, { id: uid(), forma: "PIX", pct: 0 }],
                           }))
                         }
                       >
                         + Adicionar forma
                       </button>
 
-                      {!pctOk && (
-                        <div className="warn">As porcentagens precisam fechar em 100%.</div>
-                      )}
+                      {!pctOk && <div className="warn">As porcentagens precisam fechar em 100%.</div>}
                     </Section>
                   </div>
                 )}
@@ -1542,12 +1617,7 @@ function InputField({ label, value, onChange, type = "text" }) {
   return (
     <div>
       <label className="label">{label}</label>
-      <input
-        className="input"
-        type={type}
-        value={value || ""}
-        onChange={(e) => onChange(e.target.value)}
-      />
+      <input className="input" type={type} value={value || ""} onChange={(e) => onChange(e.target.value)} />
     </div>
   );
 }
@@ -1565,11 +1635,7 @@ function SelectField({ label, value, onChange, options }) {
   return (
     <div>
       <label className="label">{label}</label>
-      <select
-        className="input"
-        value={value || ""}
-        onChange={(e) => onChange(e.target.value)}
-      >
+      <select className="input" value={value || ""} onChange={(e) => onChange(e.target.value)}>
         <option value="">Selecione</option>
         {options.map((o) => (
           <option key={o.value} value={o.value}>
@@ -1581,10 +1647,13 @@ function SelectField({ label, value, onChange, options }) {
   );
 }
 
+/** ✅ SectionTitle forçado preto */
 function Section({ title, children }) {
   return (
     <div className="section">
-      <div className="sectionTitle">{title}</div>
+      <div className="sectionTitle" style={{ color: "#000" }}>
+        {title}
+      </div>
       <div className="sectionBody">{children}</div>
     </div>
   );
