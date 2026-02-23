@@ -265,22 +265,17 @@ function getConsumoMedioCliente(c) {
   return anual > 0 ? anual / 12 : 0;
 }
 
+// ✅ CORRIGIDO: agora soma TODOS os custos (inclusive os adicionados manualmente)
 function getEconomiaCliente(c) {
   const kwp = Number(c?.ufv_potencia_kwp || 0);
   if (!kwp) return 0;
 
-  const f = Number(
-    c.financeiro_custos?.find((x) => x.tipo === "Equipamentos")?.valor || 0
-  );
-  const s = Number(
-    c.financeiro_custos?.find((x) => x.tipo === "Serviços")?.valor || 0
-  );
-  const e = Number(
-    c.financeiro_custos?.find((x) => x.tipo === "Engenharia")?.valor || 0
-  );
+  const totalCustos = (c.financeiro_custos || []).reduce((sum, it) => {
+    return sum + (Number(it?.valor) || 0);
+  }, 0);
 
-  const totalPorKwp = f / kwp + s / kwp + e / kwp;
-  return totalPorKwp * kwp;
+  // total em reais (não precisa recalcular por kWp)
+  return totalCustos;
 }
 
 export default function Clients() {
@@ -371,24 +366,30 @@ export default function Clients() {
   const geracaoMensal = kwp * irradiacao * 30;
   const geracaoAnual = geracaoMensal * 12;
 
-  // FINANCEIRO
+  // FINANCEIRO (mantém os 3 principais pra exibir)
   const custoFornecedor = Number(
-    formData.financeiro_custos.find((c) => c.tipo === "Equipamentos")?.valor ||
-      0
+    (formData.financeiro_custos || []).find((c) => c.tipo === "Equipamentos")
+      ?.valor || 0
   );
   const custoServico = Number(
-    formData.financeiro_custos.find((c) => c.tipo === "Serviços")?.valor || 0
+    (formData.financeiro_custos || []).find((c) => c.tipo === "Serviços")?.valor || 0
   );
   const custoEngenharia = Number(
-    formData.financeiro_custos.find((c) => c.tipo === "Engenharia")?.valor || 0
+    (formData.financeiro_custos || []).find((c) => c.tipo === "Engenharia")?.valor || 0
   );
 
   const fornecedorPorKwp = kwp > 0 ? custoFornecedor / kwp : 0;
   const servicoPorKwp = kwp > 0 ? custoServico / kwp : 0;
   const engenhariaPorKwp = kwp > 0 ? custoEngenharia / kwp : 0;
 
-  const totalPorKwp = fornecedorPorKwp + servicoPorKwp + engenhariaPorKwp;
-  const totalEmReais = totalPorKwp * kwp;
+  // ✅ CORRIGIDO: soma TODOS os custos (inclusive os adicionados manualmente)
+  const custoTotal = (formData.financeiro_custos || []).reduce((sum, it) => {
+    return sum + (Number(it?.valor) || 0);
+  }, 0);
+
+  // ✅ Total por kWp e Total em R$ agora consideram o TOTAL REAL
+  const totalPorKwp = kwp > 0 ? custoTotal / kwp : 0;
+  const totalEmReais = custoTotal;
 
   const pagamentos = formData.financeiro_pagamentos || [];
   const totalPct = pagamentos.reduce((s, p) => s + (Number(p.pct) || 0), 0);

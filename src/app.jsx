@@ -31,8 +31,15 @@ function makeDedupeKey(type, userId) {
     sessionStorage.setItem(sidKey, sid);
   }
 
-  // exemplo: LOGIN:<userId>:<sid>
   return `${String(type).toUpperCase()}:${userId || "anon"}:${sid}`;
+}
+
+// ✅ dedupe exclusivo pra LOGOUT (sempre novo, não “some” por duplicado)
+function makeLogoutDedupeKey(userId) {
+  const k = "activity_logout_seq";
+  const n = (Number(sessionStorage.getItem(k) || "0") || 0) + 1;
+  sessionStorage.setItem(k, String(n));
+  return `LOGOUT:${userId || "anon"}:${Date.now()}:${n}`;
 }
 
 export default function App() {
@@ -95,11 +102,11 @@ export default function App() {
         const { userId, email } = lastUserRef.current || {};
         if (!userId) return;
 
-        // dedupe diferente pra não colidir com LOGIN
         logActivity("LOGOUT", {
           userId,
           email,
-          dedupeKey: makeDedupeKey("LOGOUT", userId),
+          // ✅ aqui é a correção real
+          dedupeKey: makeLogoutDedupeKey(userId),
           extra: { source: "auth_event" },
         }).catch(() => {});
       }
