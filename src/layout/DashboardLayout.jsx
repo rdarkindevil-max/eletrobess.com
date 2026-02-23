@@ -18,6 +18,14 @@ function makeDedupeKey(type, userId) {
   return `${String(type).toUpperCase()}:${userId || "anon"}:${sid}`;
 }
 
+// ✅ dedupe exclusivo pra LOGOUT (pra não “sumir” por duplicado)
+function makeLogoutDedupeKey(userId) {
+  const k = "activity_logout_seq";
+  const n = (Number(sessionStorage.getItem(k) || "0") || 0) + 1;
+  sessionStorage.setItem(k, String(n));
+  return `LOGOUT:${userId || "anon"}:${Date.now()}:${n}`;
+}
+
 export default function DashboardLayout() {
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
@@ -122,7 +130,7 @@ export default function DashboardLayout() {
       .filter((g) => g.items.length > 0);
   }, [search, NAV]);
 
-  // ✅ LOGOUT 100%: loga antes + dedupeKey + não duplica
+  // ✅ LOGOUT 100%: loga antes + dedupeKey SEM repetição + não bloqueia
   async function logout() {
     if (loggingOut) return;
     setLoggingOut(true);
@@ -135,12 +143,16 @@ export default function DashboardLayout() {
       const userId = user?.id || null;
       const email = user?.email || null;
 
-      await logActivity("LOGOUT", {
-        userId,
-        email,
-        dedupeKey: makeDedupeKey("LOGOUT", userId),
-        extra: { source: "dashboard_logout_button" },
-      });
+      // ✅ se não tiver user, não tenta logar (evita erro de RLS)
+      if (userId) {
+        await logActivity("LOGOUT", {
+          userId,
+          email,
+          // ⚠️ aqui está a correção: dedupeKey sempre nova
+          dedupeKey: makeLogoutDedupeKey(userId),
+          extra: { source: "dashboard_logout_button" },
+        });
+      }
     } catch (e) {
       console.warn("Falha ao registrar LOGOUT:", e?.message || e);
       // não bloqueia o logout
