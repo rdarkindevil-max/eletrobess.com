@@ -23,6 +23,19 @@ export default function EmployeeInvites() {
     return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
   }, [email]);
 
+  const roleClass = (r) => {
+    const x = String(r || "").toLowerCase();
+    if (x === "admin") return "admin";
+    if (x === "client") return "client";
+    return "staff";
+  };
+
+  const memberStatusKey = (s) => {
+    const st = String(s || "").toUpperCase();
+    if (st === "INACTIVE" || st === "DISABLED") return "INACTIVE";
+    return "ACTIVE";
+  };
+
   const loadInvites = async () => {
     const { data, error } = await supabase
       .from("employee_invites")
@@ -36,7 +49,7 @@ export default function EmployeeInvites() {
   /**
    * ✅ Funcionários “de verdade”
    * - Primeiro tenta buscar na tabela employees (recomendado)
-   * - Se não existir / der erro, faz fallback:
+   * - Se não existir / der erro, fallback:
    *   mostra os ACCEPTED da employee_invites como “funcionários”
    */
   const loadMembers = async () => {
@@ -62,7 +75,7 @@ export default function EmployeeInvites() {
 
     setMembersSource("invites_accepted");
 
-    // normaliza formato pra parecer membro
+    // normaliza
     return (invAcc || []).map((x) => ({
       id: x.id,
       email: x.email,
@@ -189,7 +202,7 @@ export default function EmployeeInvites() {
 
   // ✅ remover funcionário (de verdade)
   // - Se a fonte for employees: delete na tabela employees
-  // - Se a fonte for fallback (invites accepted): marca invite como REVOKED
+  // - Se a fonte for fallback: marca invite ACCEPTED como REVOKED
   const removeMember = async (m) => {
     const em = m?.email || "";
     const msg =
@@ -204,7 +217,6 @@ export default function EmployeeInvites() {
 
     if (membersSource === "employees") {
       const { error } = await supabase.from("employees").delete().eq("id", m.id);
-
       setSaving(false);
 
       if (error) {
@@ -231,95 +243,28 @@ export default function EmployeeInvites() {
     await loadAll();
   };
 
-  // ✅ cores (pra não ficar apagado)
-  const colors = {
-    title: "#0f172a",
-    text: "#0f172a",
-    sub: "#475569",
-    border: "rgba(15, 23, 42, .10)",
-    bgCard: "#ffffff",
-  };
-
-  // ✅ botões inline (pra NÃO SUMIR por causa do teu CSS)
-  const btnDanger = (disabled) => ({
-    padding: "8px 14px",
-    borderRadius: 12,
-    border: "1px solid #ef4444",
-    background: "#ffffff",
-    color: "#ef4444",
-    fontWeight: 900,
-    cursor: disabled ? "not-allowed" : "pointer",
-    opacity: disabled ? 0.6 : 1,
-    whiteSpace: "nowrap",
-  });
-
-  const btnSoft = (disabled) => ({
-    padding: "8px 14px",
-    borderRadius: 12,
-    border: "1px solid rgba(15,23,42,.14)",
-    background: "#ffffff",
-    color: colors.text,
-    fontWeight: 900,
-    cursor: disabled ? "not-allowed" : "pointer",
-    opacity: disabled ? 0.6 : 1,
-    whiteSpace: "nowrap",
-  });
-
-  const Badge = ({ children, tone = "default" }) => {
-    const map = {
-      default: { bg: "rgba(2, 132, 199, .10)", fg: "#075985", bd: "rgba(2,132,199,.25)" },
-      ok: { bg: "rgba(16, 185, 129, .12)", fg: "#047857", bd: "rgba(16,185,129,.25)" },
-      warn: { bg: "rgba(245, 158, 11, .12)", fg: "#92400e", bd: "rgba(245,158,11,.25)" },
-      bad: { bg: "rgba(239, 68, 68, .12)", fg: "#991b1b", bd: "rgba(239,68,68,.25)" },
-      gray: { bg: "rgba(100,116,139,.12)", fg: "#334155", bd: "rgba(100,116,139,.25)" },
-    };
-    const t = map[tone] || map.default;
-    return (
-      <span
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          padding: "4px 10px",
-          borderRadius: 999,
-          fontSize: 12,
-          fontWeight: 800,
-          background: t.bg,
-          color: t.fg,
-          border: `1px solid ${t.bd}`,
-          whiteSpace: "nowrap",
-        }}
-      >
-        {children}
-      </span>
-    );
-  };
-
   const InviteStatusBadge = ({ s }) => {
     const st = String(s || "").toUpperCase();
-    if (st === "PENDING") return <Badge tone="warn">PENDING</Badge>;
-    if (st === "ACCEPTED") return <Badge tone="ok">ACCEPTED</Badge>;
-    if (st === "REVOKED") return <Badge tone="bad">REVOKED</Badge>;
-    return <Badge tone="gray">{st || "—"}</Badge>;
+    const cls =
+      st === "PENDING" ? "badge" :
+      st === "ACCEPTED" ? "badge" :
+      st === "REVOKED" ? "badge" : "badge";
+
+    // deixa o texto sempre preto pelo teu CSS
+    return <span className={cls}>{st || "—"}</span>;
   };
 
   const hasPending = invites.some((i) => String(i.status).toUpperCase() === "PENDING");
   const hasNotRevoked = invites.some((i) => String(i.status).toUpperCase() !== "REVOKED");
 
   return (
-    <div
-      className="p-6 employee-page"
-      style={{
-        opacity: 1,
-        filter: "none",
-        color: colors.text,
-      }}
-    >
+    <div className="p-6 employee-page" style={{ opacity: 1, filter: "none" }}>
       {/* Header */}
-      <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", opacity: 1, filter: "none" }}>
-        <h1 style={{ fontSize: 24, fontWeight: 900, margin: 0, color: colors.title }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+        <h1 style={{ fontSize: 24, fontWeight: 900, margin: 0 }}>
           Convites de Funcionários
         </h1>
-        <span style={{ color: colors.sub, fontWeight: 600 }}>
+        <span style={{ color: "var(--muted)", fontWeight: 700 }}>
           Adicionar emails e controlar acessos
         </span>
       </div>
@@ -338,8 +283,6 @@ export default function EmployeeInvites() {
           gridTemplateColumns: "1fr 180px 140px",
           gap: 10,
           maxWidth: 820,
-          opacity: 1,
-          filter: "none",
         }}
       >
         <input
@@ -352,6 +295,7 @@ export default function EmployeeInvites() {
         <select className="input" value={role} onChange={(e) => setRole(e.target.value)}>
           <option value="staff">staff</option>
           <option value="admin">admin</option>
+          <option value="client">client</option>
         </select>
 
         <button
@@ -364,12 +308,12 @@ export default function EmployeeInvites() {
         </button>
       </div>
 
-      <div style={{ marginTop: 10, color: colors.sub, fontSize: 13, fontWeight: 600, opacity: 1, filter: "none" }}>
+      <div style={{ marginTop: 10, color: "var(--muted)", fontSize: 13, fontWeight: 700 }}>
         * Isso só registra o convite. (Se quiser, dá pra integrar e-mail automático depois.)
       </div>
 
       {/* Tabs */}
-      <div style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap", opacity: 1, filter: "none" }}>
+      <div style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
         <button
           type="button"
           className={"btn " + (view === "employees" ? "primary" : "ghost")}
@@ -391,29 +335,29 @@ export default function EmployeeInvites() {
         </button>
 
         {view === "employees" && (
-          <span style={{ alignSelf: "center", color: colors.sub, fontSize: 12, fontWeight: 700 }}>
+          <span style={{ alignSelf: "center", color: "var(--muted)", fontSize: 12, fontWeight: 800 }}>
             Fonte: {membersSource === "employees" ? "employees" : "employee_invites (ACCEPTED)"}
           </span>
         )}
 
-        {/* ✅ AÇÕES EM MASSA (só na aba convites) */}
+        {/* Ações em massa */}
         {view === "invites" && (
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <button
+              className="btn danger"
               type="button"
               onClick={revokeAllPending}
               disabled={saving || loading || !hasPending}
-              style={btnDanger(saving || loading || !hasPending)}
               title="Marca todos PENDING como REVOKED"
             >
               Revogar pendentes
             </button>
 
             <button
+              className="btn danger"
               type="button"
               onClick={revokeAllInvites}
               disabled={saving || loading || !hasNotRevoked}
-              style={btnDanger(saving || loading || !hasNotRevoked)}
               title="Marca tudo que não for REVOKED como REVOKED (inclui ACCEPTED)"
             >
               Revogar todos
@@ -423,103 +367,119 @@ export default function EmployeeInvites() {
       </div>
 
       {/* Content */}
-      <div style={{ marginTop: 18, opacity: 1, filter: "none" }}>
+      <div style={{ marginTop: 18 }}>
         {loading ? (
-          <div style={{ color: colors.text, fontWeight: 700 }}>Carregando...</div>
+          <div style={{ fontWeight: 800, color: "var(--text)" }}>Carregando...</div>
         ) : view === "employees" ? (
           members.length === 0 ? (
-            <div style={{ color: colors.sub, fontWeight: 700 }}>Nenhum funcionário ainda.</div>
+            <div style={{ color: "var(--muted)", fontWeight: 800 }}>Nenhum funcionário ainda.</div>
           ) : (
-            <div style={{ display: "grid", gap: 10, maxWidth: 900 }}>
-              {members.map((m) => (
-                <div
-                  key={m.id}
-                  style={{
-                    border: `1px solid ${colors.border}`,
-                    borderRadius: 12,
-                    padding: 12,
-                    background: colors.bgCard,
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    gap: 10,
-                    opacity: 1,
-                    filter: "none",
-                  }}
-                >
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 900, color: colors.text }}>
-                      {m.email || "-"}
+            <div style={{ display: "grid", gap: 12, maxWidth: 900 }}>
+              {members.map((m) => {
+                const rClass = roleClass(m.role);
+                const stKey = memberStatusKey(m.status);
+
+                return (
+                  <div
+                    key={m.id}
+                    style={{
+                      border: "1px solid var(--line)",
+                      borderRadius: 16,
+                      padding: 14,
+                      background: "#fff",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 12,
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 900, fontSize: 16 }}>{m.email || "-"}</div>
+
+                      <div style={{ marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                        {/* cargo com cor */}
+                        <span className={`badge role ${rClass}`}>{rClass}</span>
+
+                        {/* status */}
+                        <span className="badge" style={{ background: "rgba(0,0,0,.04)" }}>
+                          <span
+                            style={{
+                              width: 8,
+                              height: 8,
+                              borderRadius: 999,
+                              background: stKey === "ACTIVE" ? "rgba(22,163,74,1)" : "rgba(239,68,68,1)",
+                              display: "inline-block",
+                            }}
+                          />
+                          {stKey === "ACTIVE" ? "ATIVO" : "INATIVO"}
+                        </span>
+
+                        <span className="badge" style={{ background: "rgba(0,0,0,.04)" }}>
+                          Criado em:{" "}
+                          {m.created_at ? new Date(m.created_at).toLocaleString("pt-BR") : "-"}
+                        </span>
+                      </div>
                     </div>
-                    <div style={{ fontSize: 12, color: colors.sub, fontWeight: 700 }}>
-                      role: <b style={{ color: colors.text }}>{m.role || "—"}</b>{" "}
-                      • status: <b style={{ color: colors.text }}>{m.status || "ACTIVE"}</b>{" "}
-                      • criado em:{" "}
-                      <b style={{ color: colors.text }}>
-                        {m.created_at ? new Date(m.created_at).toLocaleString("pt-BR") : "-"}
-                      </b>
+
+                    <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                      <button
+                        className="btn danger"
+                        type="button"
+                        onClick={() => removeMember(m)}
+                        disabled={saving}
+                        title="Remove acesso do funcionário"
+                      >
+                        Remover
+                      </button>
                     </div>
                   </div>
-
-                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                    <Badge tone="ok">ATIVO</Badge>
-
-                    {/* ✅ REMOVER FUNCIONÁRIO */}
-                    <button
-                      type="button"
-                      onClick={() => removeMember(m)}
-                      disabled={saving}
-                      style={btnDanger(saving)}
-                      title="Remove acesso do funcionário"
-                    >
-                      Remover
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )
         ) : invites.length === 0 ? (
-          <div style={{ color: colors.sub, fontWeight: 700 }}>Nenhum convite ainda.</div>
+          <div style={{ color: "var(--muted)", fontWeight: 800 }}>Nenhum convite ainda.</div>
         ) : (
-          <div style={{ display: "grid", gap: 10, maxWidth: 900 }}>
+          <div style={{ display: "grid", gap: 12, maxWidth: 900 }}>
             {invites.map((it) => {
               const st = String(it.status || "").toUpperCase();
               const canRevoke = st !== "REVOKED";
+              const rClass = roleClass(it.role);
+
               return (
                 <div
                   key={it.id}
                   style={{
-                    border: `1px solid ${colors.border}`,
-                    borderRadius: 12,
-                    padding: 12,
-                    background: colors.bgCard,
+                    border: "1px solid var(--line)",
+                    borderRadius: 16,
+                    padding: 14,
+                    background: "#fff",
                     display: "flex",
                     justifyContent: "space-between",
                     alignItems: "center",
-                    gap: 10,
-                    opacity: 1,
-                    filter: "none",
+                    gap: 12,
                   }}
                 >
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 900, color: colors.text }}>{it.email}</div>
-                    <div style={{ fontSize: 12, color: colors.sub, fontWeight: 700 }}>
-                      role: <b style={{ color: colors.text }}>{it.role}</b> • status:{" "}
-                      <InviteStatusBadge s={it.status} /> • criado em:{" "}
-                      <b style={{ color: colors.text }}>
+                    <div style={{ fontWeight: 900, fontSize: 16 }}>{it.email}</div>
+
+                    <div style={{ marginTop: 8, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                      <span className={`badge role ${rClass}`}>{rClass}</span>
+                      <InviteStatusBadge s={it.status} />
+                      <span className="badge" style={{ background: "rgba(0,0,0,.04)" }}>
+                        Criado em:{" "}
                         {it.created_at ? new Date(it.created_at).toLocaleString("pt-BR") : "-"}
-                      </b>
+                      </span>
                     </div>
                   </div>
 
-                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
                     {canRevoke ? (
                       <button
+                        className="btn danger"
                         type="button"
                         onClick={() => revokeInvite(it.id, it.status)}
                         disabled={saving}
-                        style={btnSoft(saving)}
                         title="Marca como REVOKED"
                       >
                         Revogar
