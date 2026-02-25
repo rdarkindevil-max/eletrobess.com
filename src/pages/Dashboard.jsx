@@ -1,3 +1,4 @@
+// src/pages/Dashboard.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import "../layout/dashboard.css";
@@ -32,6 +33,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     loadRole();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadRole = async () => {
@@ -52,7 +54,7 @@ export default function Dashboard() {
       .eq("id", user.id)
       .single();
 
-    setRole(error ? "client" : (data?.role || "client"));
+    setRole(error ? "client" : data?.role || "client");
     setLoadingRole(false);
   };
 
@@ -65,9 +67,13 @@ export default function Dashboard() {
   }, [loadingRole, role]);
 
   const loadStats = async () => {
-    const { count: clients } = await supabase.from("clients").select("*", { count: "exact", head: true });
+    const { count: clients } = await supabase
+      .from("clients")
+      .select("*", { count: "exact", head: true });
 
-    const { count: employees } = await supabase.from("employees").select("*", { count: "exact", head: true });
+    const { count: employees } = await supabase
+      .from("employees")
+      .select("*", { count: "exact", head: true });
 
     const { count: active } = await supabase
       .from("employees")
@@ -86,6 +92,8 @@ export default function Dashboard() {
   };
 
   const canSeeStaffArea = useMemo(() => role === "staff" || role === "admin", [role]);
+
+  // ✅ CORREÇÃO REAL: admin é SOMENTE admin (staff não vira admin)
   const isAdmin = useMemo(() => role === "admin", [role]);
 
   // loading role

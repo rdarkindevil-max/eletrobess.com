@@ -21,7 +21,10 @@ import Plants from "./pages/Plants";
 
 import { logActivity } from "./lib/logActivity";
 
-// ✅ dedupe por sessão do browser + evento
+// ===============================
+// 🔐 DEDUPE LOGIN / LOGOUT
+// ===============================
+
 function makeDedupeKey(type, userId) {
   const sidKey = "activity_session_id";
   let sid = sessionStorage.getItem(sidKey);
@@ -34,7 +37,6 @@ function makeDedupeKey(type, userId) {
   return `${String(type).toUpperCase()}:${userId || "anon"}:${sid}`;
 }
 
-// ✅ dedupe exclusivo pra LOGOUT (sempre novo, não “some” por duplicado)
 function makeLogoutDedupeKey(userId) {
   const k = "activity_logout_seq";
   const n = (Number(sessionStorage.getItem(k) || "0") || 0) + 1;
@@ -44,25 +46,21 @@ function makeLogoutDedupeKey(userId) {
 
 export default function App() {
   const subscribedRef = useRef(false);
-
-  // ✅ guarda o último usuário visto (pra conseguir registrar LOGOUT quando session vier null)
   const lastUserRef = useRef({ userId: null, email: null });
 
   useEffect(() => {
-    // ✅ evita duplicar listener no dev (StrictMode)
     if (subscribedRef.current) return;
     subscribedRef.current = true;
 
     let isAlive = true;
 
-    // ✅ se já estiver logado quando abrir/atualizar, registra LOGIN 1x
+    // LOGIN ao abrir app
     (async () => {
       try {
         const { data } = await supabase.auth.getSession();
         const user = data?.session?.user;
         if (!isAlive || !user?.id) return;
 
-        // salva último user
         lastUserRef.current = { userId: user.id, email: user.email ?? null };
 
         await logActivity("LOGIN", {
@@ -71,33 +69,27 @@ export default function App() {
           dedupeKey: makeDedupeKey("LOGIN", user.id),
           extra: { source: "app_boot" },
         }).catch(() => {});
-      } catch {
-        // ignora
-      }
+      } catch {}
     })();
 
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
-      // ✅ sempre atualiza o último user quando tiver session
       const u = session?.user;
+
       if (u?.id) {
         lastUserRef.current = { userId: u.id, email: u.email ?? null };
       }
 
-      // ✅ LOGIN
       if (event === "SIGNED_IN") {
-        const userId = session?.user?.id || null;
-        const email = session?.user?.email || null;
-        if (!userId) return;
+        if (!u?.id) return;
 
         logActivity("LOGIN", {
-          userId,
-          email,
-          dedupeKey: makeDedupeKey("LOGIN", userId),
+          userId: u.id,
+          email: u.email,
+          dedupeKey: makeDedupeKey("LOGIN", u.id),
           extra: { source: "auth_event" },
         }).catch(() => {});
       }
 
-      // ✅ LOGOUT (session normalmente vem null aqui)
       if (event === "SIGNED_OUT") {
         const { userId, email } = lastUserRef.current || {};
         if (!userId) return;
@@ -105,7 +97,6 @@ export default function App() {
         logActivity("LOGOUT", {
           userId,
           email,
-          // ✅ aqui é a correção real
           dedupeKey: makeLogoutDedupeKey(userId),
           extra: { source: "auth_event" },
         }).catch(() => {});
@@ -121,14 +112,18 @@ export default function App() {
 
   return (
     <Routes>
+      {/* PUBLIC */}
       <Route path="/login" element={<Login />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/" element={<Navigate to="/login" replace />} />
 
+      {/* PROTECTED */}
       <Route element={<RequireAuth />}>
         <Route element={<DashboardLayout />}>
+          {/* CLIENT */}
           <Route path="/app/client-portal" element={<ClientPortal />} />
 
+          {/* STAFF + ADMIN */}
           <Route
             path="/app/dashboard"
             element={
@@ -137,6 +132,7 @@ export default function App() {
               </RequireRole>
             }
           />
+
           <Route
             path="/app/clients"
             element={
@@ -145,6 +141,7 @@ export default function App() {
               </RequireRole>
             }
           />
+
           <Route
             path="/app/campo-tecnico"
             element={
@@ -153,6 +150,7 @@ export default function App() {
               </RequireRole>
             }
           />
+
           <Route
             path="/app/plants"
             element={
@@ -180,18 +178,21 @@ export default function App() {
             }
           />
 
+          {/* EMPLOYEES (ajuste se quiser só admin) */}
           <Route
             path="/app/employees"
             element={
-              <RequireRole allow={["admin"]}>
+              <RequireRole allow={["staff", "admin"]}>
                 <Employees />
               </RequireRole>
             }
           />
+
+          {/* ✅ INTEGRAÇÕES: STAFF + ADMIN */}
           <Route
             path="/app/integrations"
             element={
-              <RequireRole allow={["admin"]}>
+              <RequireRole allow={["staff", "admin"]}>
                 <Integrations />
               </RequireRole>
             }

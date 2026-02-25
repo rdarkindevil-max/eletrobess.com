@@ -73,6 +73,10 @@ export default function DashboardLayout() {
 
   const isClient = role === "client";
   const isAdmin = role === "admin";
+  const isStaff = role === "staff";
+
+  // ✅ staff e admin podem ver Integrações
+  const canSeeIntegrations = isAdmin || isStaff;
 
   // ✅ NAV baseado no role
   const NAV = useMemo(() => {
@@ -105,18 +109,19 @@ export default function DashboardLayout() {
       },
     ];
 
-    if (isAdmin) {
+    // ✅ Staff + Admin vêem Integrações. Employees só admin.
+    if (canSeeIntegrations) {
       base.splice(1, 0, {
         group: "Admin",
         items: [
-          { to: "/app/employees", label: "Funcionários", icon: "🧑‍💼" },
+          ...(isAdmin ? [{ to: "/app/employees", label: "Funcionários", icon: "🧑‍💼" }] : []),
           { to: "/app/integrations", label: "Integrações (APIs)", icon: "🔗" },
         ],
       });
     }
 
     return base;
-  }, [isClient, isAdmin]);
+  }, [isClient, isAdmin, canSeeIntegrations]);
 
   const filteredNav = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -136,26 +141,22 @@ export default function DashboardLayout() {
     setLoggingOut(true);
 
     try {
-      // pega sessão ANTES do signOut (pra ter userId/email)
       const { data } = await supabase.auth.getSession();
       const user = data?.session?.user || null;
 
       const userId = user?.id || null;
       const email = user?.email || null;
 
-      // ✅ se não tiver user, não tenta logar (evita erro de RLS)
       if (userId) {
         await logActivity("LOGOUT", {
           userId,
           email,
-          // ⚠️ aqui está a correção: dedupeKey sempre nova
           dedupeKey: makeLogoutDedupeKey(userId),
           extra: { source: "dashboard_logout_button" },
         });
       }
     } catch (e) {
       console.warn("Falha ao registrar LOGOUT:", e?.message || e);
-      // não bloqueia o logout
     }
 
     try {
@@ -223,12 +224,8 @@ export default function DashboardLayout() {
           <div className="dash-statusCard">
             <div className="dash-statusIcon">⚡</div>
             <div>
-              <div className="dash-statusTitle">
-                {isClient ? "Área do Cliente" : "Sistema online"}
-              </div>
-              <div className="dash-statusValue">
-                {isClient ? "Acesso restrito ao portal" : "100% operacional"}
-              </div>
+              <div className="dash-statusTitle">{isClient ? "Área do Cliente" : "Sistema online"}</div>
+              <div className="dash-statusValue">{isClient ? "Acesso restrito ao portal" : "100% operacional"}</div>
             </div>
           </div>
         </div>
@@ -236,11 +233,7 @@ export default function DashboardLayout() {
 
       <main className="dash-main">
         <header className="dash-topbar">
-          <button
-            className="dash-menuBtn"
-            onClick={() => setMenuOpen((p) => !p)}
-            type="button"
-          >
+          <button className="dash-menuBtn" onClick={() => setMenuOpen((p) => !p)} type="button">
             ☰
           </button>
 

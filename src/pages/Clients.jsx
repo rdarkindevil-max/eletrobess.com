@@ -190,6 +190,43 @@ async function uploadRateioDocs({ clientId, rateioId, files }) {
   return uploaded;
 }
 
+/**
+ * ✅ Pagamento item:
+ * - forma, pct, data (YYYY-MM-DD)
+ */
+function normalizePagamentoItem(v) {
+  const base = { id: uid(), forma: "PIX", pct: 0, data: "" };
+
+  if (v && typeof v === "object" && !Array.isArray(v)) {
+    return {
+      ...base,
+      ...v,
+      id: v.id || uid(),
+      forma: v.forma ?? "PIX",
+      pct: v.pct ?? 0,
+      data: v.data ?? "",
+    };
+  }
+
+  if (typeof v === "string") {
+    try {
+      const parsed = JSON.parse(v);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return {
+          ...base,
+          ...parsed,
+          id: parsed.id || uid(),
+          forma: parsed.forma ?? "PIX",
+          pct: parsed.pct ?? 0,
+          data: parsed.data ?? "",
+        };
+      }
+    } catch {}
+  }
+
+  return base;
+}
+
 function normalizeClient(c) {
   const safe = c || {};
 
@@ -205,6 +242,10 @@ function normalizeClient(c) {
       : [];
 
   const rateios = normalizeJsonArray(safe.ufv_rateios, legacyRateio).map(normalizeRateioItem);
+
+  const pagamentos = normalizeJsonArray(safe.financeiro_pagamentos, [
+    { id: uid(), forma: "PIX", pct: 0, data: "" },
+  ]).map(normalizePagamentoItem);
 
   return {
     id: safe.id ?? uid(),
@@ -249,9 +290,8 @@ function normalizeClient(c) {
       { id: uid(), tipo: "Engenharia", valor: "" },
     ]),
 
-    financeiro_pagamentos: normalizeJsonArray(safe.financeiro_pagamentos, [
-      { id: uid(), forma: "PIX", pct: 0 },
-    ]),
+    // ✅ pagamentos com data
+    financeiro_pagamentos: pagamentos,
   };
 }
 
@@ -484,7 +524,7 @@ export default function Clients() {
   const totalPorKwp = kwp > 0 ? custoTotal / kwp : 0;
   const totalEmReais = custoTotal;
 
-  const pagamentos = formData.financeiro_pagamentos || [];
+  const pagamentos = (formData.financeiro_pagamentos || []).map(normalizePagamentoItem);
   const totalPct = pagamentos.reduce((s, p) => s + (Number(p.pct) || 0), 0);
   const pctOk = totalPct === 100;
 
@@ -521,13 +561,17 @@ export default function Clients() {
     const { id: _ignoreId, ...rest } = fd || {};
     const cats = normalizeCategories(fd.service_categories);
 
+    const pay = Array.isArray(fd.financeiro_pagamentos)
+      ? fd.financeiro_pagamentos.map(normalizePagamentoItem)
+      : [];
+
     return {
       ...rest,
       service_categories: cats,
       service_category: cats[0] || "", // ✅ compat com a coluna antiga
       ufv_consumo_mensal: normalizeConsumoMensal(fd.ufv_consumo_mensal),
       financeiro_custos: Array.isArray(fd.financeiro_custos) ? fd.financeiro_custos : [],
-      financeiro_pagamentos: Array.isArray(fd.financeiro_pagamentos) ? fd.financeiro_pagamentos : [],
+      financeiro_pagamentos: pay,
       ufv_rateios:
         fd.ufv_rateio === "SIM"
           ? (Array.isArray(fd.ufv_rateios) ? fd.ufv_rateios : []).map(
@@ -658,8 +702,7 @@ export default function Clients() {
       if (error) throw error;
 
       if (!data || data.length === 0) {
-        const msg =
-          "Não deletou (vazio). Normalmente é RLS/policy bloqueando OU id não existe.";
+        const msg = "Não deletou (vazio). Normalmente é RLS/policy bloqueando OU id não existe.";
         setErrMsg(msg);
         alert(msg);
         return;
@@ -985,11 +1028,7 @@ export default function Clients() {
                       <label className="label">Categoria(s) de Serviço</label>
 
                       {(formData.service_categories || []).map((cat, i) => (
-                        <div
-                          key={i}
-                          className="row3"
-                          style={{ marginBottom: 8, alignItems: "center" }}
-                        >
+                        <div key={i} className="row3" style={{ marginBottom: 8, alignItems: "center" }}>
                           <select
                             className="input"
                             value={cat || ""}
@@ -1016,9 +1055,7 @@ export default function Clients() {
                             onClick={() =>
                               setFormData((p) => ({
                                 ...p,
-                                service_categories: (p.service_categories || []).filter(
-                                  (_, idx) => idx !== i
-                                ),
+                                service_categories: (p.service_categories || []).filter((_, idx) => idx !== i),
                               }))
                             }
                           >
@@ -1140,7 +1177,9 @@ export default function Clients() {
                                   } else {
                                     setFormData((p) => ({
                                       ...p,
-                                      ufv_rateios: (p.ufv_rateios || []).length ? p.ufv_rateios : [newRateioItem()],
+                                      ufv_rateios: (p.ufv_rateios || []).length
+                                        ? p.ufv_rateios
+                                        : [newRateioItem()],
                                     }));
                                   }
                                 }}
@@ -1184,7 +1223,9 @@ export default function Clients() {
                                               onClick={() =>
                                                 setFormData((p) => ({
                                                   ...p,
-                                                  ufv_rateios: (p.ufv_rateios || []).filter((x) => x.id !== r.id),
+                                                  ufv_rateios: (p.ufv_rateios || []).filter(
+                                                    (x) => x.id !== r.id
+                                                  ),
                                                 }))
                                               }
                                             >
@@ -1481,7 +1522,7 @@ export default function Clients() {
                       </div>
                     </Section>
 
-                    <Section title="Formas de Pagamento (por % — sem parcelas)">
+                    <Section title="Formas de Pagamento (por % — com data)">
                       <div className="between small">
                         <span>
                           Total: <b>{totalPct}%</b>
@@ -1493,7 +1534,14 @@ export default function Clients() {
 
                       {pagamentosCalculados.map((p) => (
                         <div key={p.id} className="payItem">
-                          <div className="payGrid">
+                          <div
+                            className="payGrid"
+                            style={{
+                              gridTemplateColumns: "1.3fr 0.4fr 0.6fr 0.6fr auto",
+                              gap: 10,
+                              alignItems: "end",
+                            }}
+                          >
                             <div>
                               <label className="label">Forma</label>
                               <select
@@ -1532,11 +1580,28 @@ export default function Clients() {
                             </div>
 
                             <div>
+                              <label className="label">Data</label>
+                              <input
+                                className="input"
+                                type="date"
+                                value={p.data || ""}
+                                onChange={(e) =>
+                                  setFormData((prev) => ({
+                                    ...prev,
+                                    financeiro_pagamentos: pagamentos.map((x) =>
+                                      x.id === p.id ? { ...x, data: e.target.value } : x
+                                    ),
+                                  }))
+                                }
+                              />
+                            </div>
+
+                            <div>
                               <label className="label">Valor (R$)</label>
                               <input className="input" value={p.valor.toFixed(2)} readOnly />
                             </div>
 
-                            <div className="payDel">
+                            <div className="payDel" style={{ display: "flex", justifyContent: "flex-end" }}>
                               <button
                                 className="btn danger"
                                 type="button"
@@ -1560,7 +1625,10 @@ export default function Clients() {
                         onClick={() =>
                           setFormData((p) => ({
                             ...p,
-                            financeiro_pagamentos: [...p.financeiro_pagamentos, { id: uid(), forma: "PIX", pct: 0 }],
+                            financeiro_pagamentos: [
+                              ...pagamentos,
+                              { id: uid(), forma: "PIX", pct: 0, data: "" },
+                            ],
                           }))
                         }
                       >
@@ -1659,20 +1727,21 @@ function Section({ title, children }) {
   );
 }
 
+/** ✅ Modal maior (pra caber o Valor) */
 const modalOverlay = {
   position: "fixed",
   inset: 0,
   background: "rgba(0,0,0,.45)",
   display: "flex",
-  alignItems: "flex-start",
+  alignItems: "center", // ✅ antes era flex-start
   justifyContent: "center",
   padding: 24,
   zIndex: 9999,
 };
 
 const modalCard = {
-  width: "min(1100px, 100%)",
-  maxHeight: "calc(100vh - 48px)",
+  width: "min(1400px, 95%)", // ✅ antes era 1100px
+  maxHeight: "95vh", // ✅ antes era calc(100vh - 48px)
   overflow: "auto",
   background: "transparent",
 };
