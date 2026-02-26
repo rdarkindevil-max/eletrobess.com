@@ -11,7 +11,7 @@
   --side-bg: #0b2231;
   --side-bg2: #071824;
   --side-line: rgba(255,255,255,.10);
-  --side-text: #eaf2ff;
+  --side-text: #000000;
   --side-muted: rgba(234,242,255,.70);
   --side-chip: rgba(255,255,255,.06);
 }
@@ -203,7 +203,7 @@ body{
   border-radius: 999px;
   border: 1px solid rgb(6, 183, 71);
   background: rgb(6, 183, 71);
-  color: #ffffff;
+  color: #000000;
   font-weight: 900;
   cursor:pointer;
 }
@@ -379,3 +379,95 @@ tr:hover td{
 .panel span{
   color: #000000 !important;
 }
+/* ===== EMPLOYEES: cargo/role mais visível ===== */
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 900;
+  border: 1px solid rgba(0,0,0,.12);
+  background: rgba(0,0,0,.06);
+  color: #000 !important; /* letra preta */
+  white-space: nowrap;
+}
+.role-badge.admin { background: rgba(245,158,11,.22); border-color: rgba(245,158,11,.40); }
+.role-badge.staff { background: rgba(16,185,129,.18); border-color: rgba(16,185,129,.40); }
+.role-badge.client{ background: rgba(99,102,241,.18); border-color: rgba(99,102,241,.40); }
+
+/* ===== botão 3 pontinhos + menu ===== */
+.kebab-btn{
+  width: 40px; height: 40px;
+  border-radius: 12px;
+  border: 1px solid rgba(0,0,0,.10);
+  background: #fff;
+  cursor: pointer;
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1;
+  display: grid;
+  place-items: center;
+}
+.kebab-btn:hover{ background: rgba(0,0,0,.03); }
+.kebab-btn:disabled{ opacity: .6; cursor: not-allowed; }
+
+.kebab-wrap{ position: relative; display: inline-block; }
+
+.kebab-menu{
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 190px;
+  background: #fff;
+  border: 1px solid rgba(0,0,0,.12);
+  border-radius: 14px;
+  box-shadow: 0 16px 40px rgba(0,0,0,.12);
+  padding: 8px;
+  z-index: 999;
+}
+
+.kebab-item{
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 10px;
+  border-radius: 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  font-weight: 900;
+  color: #000;
+}
+.kebab-item:hover{
+  background: rgba(0,0,0,.03);
+  border-color: rgba(0,0,0,.08);
+}
+.kebab-item.danger{
+  color: #991b1b;
+}
+.kebab-item.danger:hover{
+  background: rgba(239,68,68,.08);
+  border-color: rgba(239,68,68,.22);
+}
+.kebab-item.active{
+  background: rgba(22,163,74,.16);
+  border-color: rgba(22,163,74,.35);
+}
+/* garante texto forte no badge/cargo */
+.badge, .chip, .pill, .tag, .role, .role-badge {
+  color: #000 !important;
+  opacity: 1 !important;
+  font-weight: 900 !important;
+}
+
+/* hover do menu */
+.kebab-menu button:hover{
+  background: rgba(0,0,0,.04);
+  border-color: rgba(0,0,0,.08);
+}
+.kebab-wrap { position: relative !important; }
+.kebab-menu { display: block !important; opacity: 1 !important; visibility: visible !important; }
+.kebab-btn { color:#000 !important; background:#fff !important; }

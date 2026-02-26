@@ -2297,3 +2297,228 @@ textarea::placeholder {
 .employee-page {
   color: #0f172a !important;
 }
+.btn {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 14px;
+  cursor: pointer;
+  border: none;
+  transition: 0.2s ease;
+}
+
+/* ✅ TODO BOTÃO "VERDE" */
+.btn.primary,
+.btn.ghost {
+  background-color: #16a34a;
+  color: #ffffff;
+}
+
+.btn.primary:hover,
+.btn.ghost:hover {
+  background-color: #15803d;
+}
+
+/* ✅ EXCLUIR VERMELHO */
+.btn.danger {
+  background: #ffffff;
+  color: #ef4444;
+  border: 1px solid #ef4444;
+}
+.btn.danger:hover {
+  background: #ef4444;
+  color: #ffffff;
+}
+/* =========================================
+   PADRÃO VERDE ELETROBESS (FORÇA TOTAL)
+========================================= */
+
+.btn.primary,
+.btn.ghost {
+  background-color: #16a34a !important;
+  color: #ffffff !important;
+  border: none !important;
+}
+
+.btn.primary:hover,
+.btn.ghost:hover {
+  background-color: #15803d !important;
+  color: #ffffff !important;
+}
+
+.btn.danger {
+  background-color: #ffffff !important;
+  color: #dc2626 !important;
+  border: 1px solid #dc2626 !important;
+}
+
+.btn.danger:hover {
+  background-color: #dc2626 !important;
+  color: #ffffff !important;
+}
+/* ====== remove risquinho/linha do kebab (3 pontos) ====== */
+.kebabWrap .btn,
+.kebabWrap .btn:focus,
+.kebabWrap .btn:active,
+.kebabWrap .btn:hover {
+  box-shadow: none !important;
+  text-decoration: none !important;
+  outline: none !important;
+  border: none !important;
+}
+
+.kebabWrap .btn::after,
+.kebabWrap .btn::before {
+  content: none !important;
+}
+
+/* deixa o botão ⋮ bem “quadradinho” e alinhado */
+.kebabWrap .btn {
+  width: 34px !important;
+  height: 34px !important;
+  padding: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  line-height: 1 !important;
+  border-radius: 10px !important;
+}
+/* ====== cards de clientes mais compactos ====== */
+.clientCard2 {
+  padding: 12px !important;       /* antes maior */
+  border-radius: 14px !important;
+}
+
+.clientTop2 {
+  margin-bottom: 8px !important;
+}
+
+.clientMeta2 {
+  gap: 8px !important;
+  margin-top: 6px !important;
+}
+
+.clientActions2 {
+  margin-top: 10px !important;
+  padding-top: 10px !important;
+}
+
+/* chips menores */
+.chip2 {
+  padding: 4px 10px !important;
+  font-size: 12px !important;
+}
+
+/* avatar e textos mais compactos */
+.avatar2 {
+  width: 34px !important;
+  height: 34px !important;
+  font-size: 14px !important;
+}
+
+.clientName2 {
+  font-size: 14px !important;
+  line-height: 1.2 !important;
+}
+
+.clientEmail2 {
+  font-size: 12px !important;
+  line-height: 1.2 !important;
+}
+/* ===== CLIENT CARD ULTRA COMPACTO ===== */
+
+.clientCard2 {
+  padding: 8px 12px !important;
+  border-radius: 12px !important;
+}
+
+.clientTop2 {
+  margin-bottom: 4px !important;
+}
+
+.clientLeft2 {
+  gap: 8px !important;
+}
+
+.avatar2 {
+  width: 28px !important;
+  height: 28px !important;
+  font-size: 13px !important;
+}
+
+.clientName2 {
+  font-size: 13px !important;
+  line-height: 1.1 !important;
+}
+
+.clientEmail2 {
+  font-size: 11px !important;
+  opacity: 0.7 !important;
+  line-height: 1.1 !important;
+}
+
+.clientMeta2 {
+  gap: 6px !important;
+  margin-top: 4px !important;
+}
+
+.chip2 {
+  padding: 3px 8px !important;
+  font-size: 11px !important;
+  border-radius: 8px !important;
+}
+
+.clientTotal2 {
+  font-size: 13px !important;
+}
+
+.clientActions2 {
+  margin-top: 6px !important;
+  padding-top: 6px !important;
+}
+
+.clientActions2 .btn {
+  height: 28px !important;
+  padding: 4px 10px !important;
+  font-size: 12px !important;
+}
+
+/* botão 3 pontos menor */
+.kebabWrap .btn {
+  width: 28px !important;
+  height: 28px !important;
+  font-size: 14px !important;
+}
+/* ===== SIDEBAR TEXTO BRANCO ===== */
+
+.sidebar,
+.sidebar * {
+  color: #ffffff;
+}
+
+/* nome Eletrobess */
+.sidebar .logo,
+.sidebar .logo span,
+.sidebar h1,
+.sidebar h2 {
+  color: #ffffff !important;
+}
+
+/* card sistema online */
+.sidebar .systemStatus,
+.sidebar .systemStatus * {
+  color: #ffffff !important;
+}
+
+/* se tiver classe específica */
+.sidebar .statusText,
+.sidebar .statusTitle {
+  color: #ffffff !important;
+}
+/* FORÇA TEXTO BRANCO NA SIDEBAR */
+aside,
+aside *,
+nav,
+nav * {
+  color: #ffffff !important;
+}

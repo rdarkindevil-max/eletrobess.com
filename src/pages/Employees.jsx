@@ -12,6 +12,7 @@ function Badge({ children }) {
         borderRadius: 999,
         border: "1px solid rgba(0,0,0,.10)",
         background: "rgba(255,255,255,.7)",
+        color: "#000",
       }}
     >
       {children}
@@ -22,19 +23,20 @@ function Badge({ children }) {
 function RoleBadge({ role }) {
   const r = (role || "client").toLowerCase();
   const label = r;
+
   const bg =
     r === "admin"
-      ? "rgba(255, 215, 0, .18)"
+      ? "rgba(255, 215, 0, .22)"
       : r === "staff"
-      ? "rgba(42, 211, 162, .16)"
-      : "rgba(148, 163, 184, .18)";
+      ? "rgba(42, 211, 162, .20)"
+      : "rgba(148, 163, 184, .22)";
 
   const bd =
     r === "admin"
-      ? "rgba(255, 215, 0, .35)"
+      ? "rgba(255, 215, 0, .45)"
       : r === "staff"
-      ? "rgba(42, 211, 162, .30)"
-      : "rgba(148, 163, 184, .30)";
+      ? "rgba(42, 211, 162, .45)"
+      : "rgba(148, 163, 184, .45)";
 
   return (
     <span
@@ -46,12 +48,29 @@ function RoleBadge({ role }) {
         border: `1px solid ${bd}`,
         background: bg,
         textTransform: "lowercase",
+        color: "#000", // 🔥 FORÇA PRETO
+        opacity: 1, // 🔥 NÃO DEIXA TRANSPARENTE
+        textShadow: "none",
       }}
       title="Cargo de acesso"
     >
       {label}
     </span>
   );
+}
+
+function menuItemStyle(isDanger = false) {
+  return {
+    width: "100%",
+    padding: "10px 10px",
+    borderRadius: 12,
+    background: "transparent",
+    border: "1px solid transparent",
+    fontWeight: 900,
+    color: isDanger ? "#991b1b" : "#000",
+    cursor: "pointer",
+    textAlign: "left",
+  };
 }
 
 export default function Employees() {
@@ -62,6 +81,22 @@ export default function Employees() {
   const [q, setQ] = useState("");
 
   const [myId, setMyId] = useState(null);
+
+  // ✅ menu 3 pontinhos por card
+  const [openMenuId, setOpenMenuId] = useState(null);
+
+  // ✅ trava ações enquanto salva (pra não bugar)
+  const [savingId, setSavingId] = useState(null);
+
+  useEffect(() => {
+    const onClick = (e) => {
+      // se clicou dentro do menu/botão, não fecha
+      if (e.target.closest(".kebab-wrap")) return;
+      setOpenMenuId(null);
+    };
+    window.addEventListener("click", onClick);
+    return () => window.removeEventListener("click", onClick);
+  }, []);
 
   const loadEmployees = async () => {
     setErrMsg("");
@@ -144,14 +179,18 @@ export default function Employees() {
     const next = (emp.status || "ATIVO") === "ATIVO" ? "INATIVO" : "ATIVO";
     if (!confirm(`Mudar status de ${emp.email} para ${next}?`)) return;
 
-    const { error } = await supabase.from("employees").update({ status: next }).eq("id", emp.id);
+    setSavingId(emp.id);
+    try {
+      const { error } = await supabase.from("employees").update({ status: next }).eq("id", emp.id);
+      if (error) throw error;
 
-    if (error) {
-      alert("Erro ao atualizar: " + error.message);
-      return;
+      await loadEmployees();
+    } catch (e) {
+      alert("Erro ao atualizar: " + (e?.message || "erro"));
+    } finally {
+      setSavingId(null);
+      setOpenMenuId(null);
     }
-
-    await loadEmployees();
   };
 
   // ✅ mudar role (admin/staff/client)
@@ -164,14 +203,18 @@ export default function Employees() {
 
     if (!confirm(`Mudar role de ${emp.email} para ${newRole}?`)) return;
 
-    const { error } = await supabase.from("profiles").update({ role: newRole }).eq("id", emp.id);
+    setSavingId(emp.id);
+    try {
+      const { error } = await supabase.from("profiles").update({ role: newRole }).eq("id", emp.id);
+      if (error) throw error;
 
-    if (error) {
-      alert("Erro ao atualizar role: " + error.message);
-      return;
+      await loadEmployees();
+    } catch (e) {
+      alert("Erro ao atualizar role: " + (e?.message || "erro"));
+    } finally {
+      setSavingId(null);
+      setOpenMenuId(null);
     }
-
-    await loadEmployees();
   };
 
   return (
@@ -254,6 +297,7 @@ export default function Employees() {
                   const status = e.status || "ATIVO";
                   const statusKey = status.toLowerCase();
                   const isMe = myId && e.id === myId;
+                  const isSaving = savingId === e.id;
 
                   return (
                     <div key={e.id} className="clientCard2">
@@ -271,39 +315,129 @@ export default function Employees() {
 
                         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                           <RoleBadge role={e.role} />
-                          <span className={`badge2 badge-${statusKey}`}>
+
+                          <span className={`badge2 badge-${statusKey}`} style={{ color: "#000" }}>
                             {statusKey === "ativo" ? "ATIVO" : statusKey}
                           </span>
+
+                          {/* ✅ MENU 3 PONTINHOS */}
+                          <div className="kebab-wrap" style={{ position: "relative" }}>
+                            <button
+                              type="button"
+                              onClick={(ev) => {
+                                ev.stopPropagation();
+                                setOpenMenuId(openMenuId === e.id ? null : e.id);
+                              }}
+                              title="Ações"
+                              disabled={isSaving}
+                              style={{
+                                width: 38,
+                                height: 38,
+                                borderRadius: 12,
+                                border: "1px solid rgba(0,0,0,.12)",
+                                background: "#fff",
+                                color: "#000",
+                                fontWeight: 1000,
+                                fontSize: 22,
+                                cursor: isSaving ? "not-allowed" : "pointer",
+                                display: "grid",
+                                placeItems: "center",
+                                lineHeight: 1,
+                                paddingBottom: 6, // deixa o ⋯ central
+                              }}
+                            >
+                              ⋯
+                            </button>
+
+                            {openMenuId === e.id && (
+                              <div
+                                onClick={(ev) => ev.stopPropagation()}
+                                style={{
+                                  position: "absolute",
+                                  right: 0,
+                                  top: "calc(100% + 8px)",
+                                  minWidth: 220,
+                                  background: "#fff",
+                                  border: "1px solid rgba(0,0,0,.12)",
+                                  borderRadius: 14,
+                                  boxShadow: "0 16px 40px rgba(0,0,0,.12)",
+                                  padding: 8,
+                                  zIndex: 9999,
+                                }}
+                              >
+                                <button
+                                  type="button"
+                                  onClick={() => toggleStatus(e)}
+                                  disabled={isSaving}
+                                  style={{
+                                    ...menuItemStyle(true),
+                                    opacity: isSaving ? 0.6 : 1,
+                                    cursor: isSaving ? "not-allowed" : "pointer",
+                                  }}
+                                >
+                                  {status === "ATIVO" ? "Desativar" : "Ativar"}
+                                </button>
+
+                                <div style={{ height: 1, background: "rgba(0,0,0,.08)", margin: "8px 4px" }} />
+
+                                <div style={{ padding: "6px 10px", fontSize: 11, fontWeight: 900, color: "rgba(0,0,0,.55)" }}>
+                                  Trocar cargo
+                                </div>
+
+                                <button
+                                  type="button"
+                                  onClick={() => changeRole(e, "staff")}
+                                  disabled={isSaving}
+                                  style={{
+                                    ...menuItemStyle(false),
+                                    opacity: isSaving ? 0.6 : 1,
+                                    cursor: isSaving ? "not-allowed" : "pointer",
+                                  }}
+                                >
+                                  Staff
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => changeRole(e, "admin")}
+                                  disabled={isSaving}
+                                  style={{
+                                    ...menuItemStyle(false),
+                                    opacity: isSaving ? 0.6 : 1,
+                                    cursor: isSaving ? "not-allowed" : "pointer",
+                                  }}
+                                >
+                                  Admin
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => changeRole(e, "client")}
+                                  disabled={isSaving}
+                                  style={{
+                                    ...menuItemStyle(false),
+                                    opacity: isSaving ? 0.6 : 1,
+                                    cursor: isSaving ? "not-allowed" : "pointer",
+                                  }}
+                                >
+                                  Cliente
+                                </button>
+                              </div>
+                            )}
+                          </div>
                         </div>
                       </div>
 
                       <div className="clientMeta2">
-                        <div className="chip2">
+                        <div className="chip2" style={{ color: "#000" }}>
                           Criado em: {e.created_at ? new Date(e.created_at).toLocaleDateString("pt-BR") : "-"}
                         </div>
-                        <div className="chip2">
+                        <div className="chip2" style={{ color: "#000" }}>
                           <Badge>ID</Badge> <span style={{ opacity: 0.75 }}>{String(e.id).slice(0, 8)}…</span>
                         </div>
                       </div>
 
-                      {/* ✅ AÇÕES */}
-                      <div className="clientActions2" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button className="btn ghost" type="button" onClick={() => toggleStatus(e)}>
-                          {status === "ATIVO" ? "Desativar" : "Ativar"}
-                        </button>
-
-                        <button className="btn ghost" type="button" onClick={() => changeRole(e, "staff")}>
-                          Staff
-                        </button>
-
-                        <button className="btn ghost" type="button" onClick={() => changeRole(e, "admin")}>
-                          Admin
-                        </button>
-
-                        <button className="btn ghost" type="button" onClick={() => changeRole(e, "client")}>
-                          Cliente
-                        </button>
-                      </div>
+                      {/* ✅ AÇÕES REMOVIDAS DAQUI (agora ficam só no ⋯) */}
                     </div>
                   );
                 })}
