@@ -51,21 +51,15 @@ export default function Employees() {
     if (!term) return items;
 
     return items.filter((x) => {
-      const hay = [
-        x.name,
-        x.email,
-        x.role,
-        x.status,
-        x.id,
-      ]
-        .map(norm)
-        .join(" ");
+      const hay = [x.name, x.email, x.role, x.status, x.id].map(norm).join(" ");
       return hay.includes(term);
     });
   }, [items, q]);
 
   const total = filtered.length;
-  const activeCount = filtered.filter((x) => String(x.status || "").toUpperCase() !== "INACTIVE").length;
+  const activeCount = filtered.filter(
+    (x) => String(x.status || "").toUpperCase() !== "INACTIVE"
+  ).length;
   const inactiveCount = total - activeCount;
 
   const roleLabel = (r) => {
@@ -113,7 +107,8 @@ export default function Employees() {
     const now = String(emp.status || "").toUpperCase();
     const next = now === "INACTIVE" ? "ACTIVE" : "INACTIVE";
 
-    if (!confirm(`${next === "INACTIVE" ? "Desativar" : "Reativar"} "${emp.email}"?`)) return;
+    if (!confirm(`${next === "INACTIVE" ? "Desativar" : "Reativar"} "${emp.email}"?`))
+      return;
 
     setSavingId(emp.id);
     setErrMsg("");
@@ -135,11 +130,31 @@ export default function Employees() {
 
   const Badge = ({ children, tone = "default" }) => {
     const map = {
-      default: { bg: "rgba(2, 132, 199, .12)", fg: "#075985", bd: "rgba(2,132,199,.28)" },
-      ok: { bg: "rgba(16, 185, 129, .14)", fg: "#047857", bd: "rgba(16,185,129,.28)" },
-      bad: { bg: "rgba(239, 68, 68, .14)", fg: "#991b1b", bd: "rgba(239,68,68,.28)" },
-      gray: { bg: "rgba(100,116,139,.14)", fg: "#334155", bd: "rgba(100,116,139,.28)" },
-      warn: { bg: "rgba(245, 158, 11, .14)", fg: "#92400e", bd: "rgba(245,158,11,.28)" },
+      default: {
+        bg: "rgba(2, 132, 199, .12)",
+        fg: "#075985",
+        bd: "rgba(2,132,199,.28)",
+      },
+      ok: {
+        bg: "rgba(16, 185, 129, .14)",
+        fg: "#047857",
+        bd: "rgba(16,185,129,.28)",
+      },
+      bad: {
+        bg: "rgba(239, 68, 68, .14)",
+        fg: "#991b1b",
+        bd: "rgba(239,68,68,.28)",
+      },
+      gray: {
+        bg: "rgba(100,116,139,.14)",
+        fg: "#334155",
+        bd: "rgba(100,116,139,.28)",
+      },
+      warn: {
+        bg: "rgba(245, 158, 11, .14)",
+        fg: "#92400e",
+        bd: "rgba(245,158,11,.28)",
+      },
     };
     const t = map[tone] || map.default;
     return (
@@ -170,7 +185,8 @@ export default function Employees() {
     return <Badge tone="ok">staff</Badge>;
   };
 
-  const StatCard = ({ title, value }) => (
+  // ✅ ALTERADO: agora aceita icon
+  const StatCard = ({ title, value, icon }) => (
     <div
       className="panel"
       style={{
@@ -182,9 +198,27 @@ export default function Employees() {
         minHeight: 70,
       }}
     >
-      <div style={{ width: 38, height: 38, borderRadius: 12, background: "rgba(0,0,0,.06)" }} />
+      <div
+        style={{
+          width: 38,
+          height: 38,
+          borderRadius: 12,
+          background: "rgba(0,0,0,.06)",
+          display: "grid",
+          placeItems: "center",
+          fontSize: 18,
+          fontWeight: 900,
+          color: "#000",
+          flex: "0 0 auto",
+        }}
+        aria-hidden="true"
+      >
+        {icon}
+      </div>
       <div style={{ lineHeight: 1.1 }}>
-        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,.55)" }}>{title}</div>
+        <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,.55)" }}>
+          {title}
+        </div>
         <div style={{ fontSize: 22, fontWeight: 1000, color: "#000" }}>{value}</div>
       </div>
     </div>
@@ -193,8 +227,12 @@ export default function Employees() {
   return (
     <div style={{ padding: 24, color: "#000" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-        <h1 style={{ margin: 0, fontSize: 34, fontWeight: 1000, color: "#000" }}>Funcionários</h1>
-        <span style={{ fontWeight: 800, color: "rgba(0,0,0,.55)" }}>Lista, status e cargos (staff/admin/client)</span>
+        <h1 style={{ margin: 0, fontSize: 34, fontWeight: 1000, color: "#000" }}>
+          Funcionários
+        </h1>
+        <span style={{ fontWeight: 800, color: "rgba(0,0,0,.55)" }}>
+          Lista, status e cargos (staff/admin/client)
+        </span>
       </div>
 
       {errMsg ? (
@@ -203,10 +241,19 @@ export default function Employees() {
         </div>
       ) : null}
 
-      <div style={{ marginTop: 18, display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, maxWidth: 920 }}>
-        <StatCard title="Total" value={total} />
-        <StatCard title="Ativos" value={activeCount} />
-        <StatCard title="Inativos" value={inactiveCount} />
+      {/* ✅ ALTERADO: adiciona ícones */}
+      <div
+        style={{
+          marginTop: 18,
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr 1fr",
+          gap: 14,
+          maxWidth: 920,
+        }}
+      >
+        <StatCard icon="👥" title="Total" value={total} />
+        <StatCard icon="✅" title="Ativos" value={activeCount} />
+        <StatCard icon="⛔" title="Inativos" value={inactiveCount} />
       </div>
 
       <div style={{ marginTop: 16, maxWidth: 920 }}>
@@ -219,8 +266,18 @@ export default function Employees() {
         />
       </div>
 
-      <div className="panel" style={{ marginTop: 16, padding: 0, borderRadius: 16, maxWidth: 1120 }}>
-        <div style={{ padding: "14px 16px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div
+        className="panel"
+        style={{ marginTop: 16, padding: 0, borderRadius: 16, maxWidth: 1120 }}
+      >
+        <div
+          style={{
+            padding: "14px 16px",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
           <div style={{ fontWeight: 1000, color: "#000" }}>Equipe</div>
           <div style={{ fontSize: 12, fontWeight: 800, color: "rgba(0,0,0,.55)" }}>
             {filtered.length} resultado(s)
@@ -231,11 +288,15 @@ export default function Employees() {
           {loading ? (
             <div style={{ fontWeight: 900, color: "#000" }}>Carregando...</div>
           ) : filtered.length === 0 ? (
-            <div style={{ fontWeight: 900, color: "rgba(0,0,0,.55)" }}>Nenhum funcionário encontrado.</div>
+            <div style={{ fontWeight: 900, color: "rgba(0,0,0,.55)" }}>
+              Nenhum funcionário encontrado.
+            </div>
           ) : (
             filtered.map((emp) => {
               const email = emp.email || "-";
-              const created = emp.created_at ? new Date(emp.created_at).toLocaleDateString("pt-BR") : "-";
+              const created = emp.created_at
+                ? new Date(emp.created_at).toLocaleDateString("pt-BR")
+                : "-";
               const status = String(emp.status || "").toUpperCase();
 
               return (
@@ -271,18 +332,46 @@ export default function Employees() {
                     </div>
 
                     <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 1000, color: "#000", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                        <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 420 }}>
+                      <div
+                        style={{
+                          fontWeight: 1000,
+                          color: "#000",
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                        }}
+                      >
+                        <span
+                          style={{
+                            whiteSpace: "nowrap",
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            maxWidth: 420,
+                          }}
+                        >
                           {emp.name ? emp.name : email.split("@")[0]}
                         </span>
-                        {emp.is_me ? <span style={{ fontWeight: 900, color: "rgba(0,0,0,.55)" }}>(você)</span> : null}
+                        {emp.is_me ? (
+                          <span style={{ fontWeight: 900, color: "rgba(0,0,0,.55)" }}>
+                            (você)
+                          </span>
+                        ) : null}
                       </div>
 
                       <div style={{ fontSize: 13, fontWeight: 800, color: "rgba(0,0,0,.55)" }}>
                         {email}
                       </div>
 
-                      <div style={{ marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                      <div
+                        style={{
+                          marginTop: 8,
+                          display: "flex",
+                          gap: 8,
+                          flexWrap: "wrap",
+                          alignItems: "center",
+                        }}
+                      >
                         <span className="badge" style={{ color: "#000", opacity: 1 }}>
                           Criado em: <b style={{ color: "#000" }}>{created}</b>
                         </span>
@@ -293,7 +382,15 @@ export default function Employees() {
                     </div>
                   </div>
 
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 10,
+                      flexWrap: "wrap",
+                      justifyContent: "flex-end",
+                    }}
+                  >
                     {/* cargo atual visível */}
                     <RoleBadge role={emp.role} />
 
@@ -356,13 +453,28 @@ export default function Employees() {
 
                           <div style={{ height: 1, background: "rgba(0,0,0,.08)", margin: "8px 4px" }} />
 
-                          <button type="button" onClick={() => setRole(emp, "staff")} disabled={savingId === emp.id} style={menuItemStyle(false)}>
+                          <button
+                            type="button"
+                            onClick={() => setRole(emp, "staff")}
+                            disabled={savingId === emp.id}
+                            style={menuItemStyle(false)}
+                          >
                             Staff
                           </button>
-                          <button type="button" onClick={() => setRole(emp, "admin")} disabled={savingId === emp.id} style={menuItemStyle(false)}>
+                          <button
+                            type="button"
+                            onClick={() => setRole(emp, "admin")}
+                            disabled={savingId === emp.id}
+                            style={menuItemStyle(false)}
+                          >
                             Admin
                           </button>
-                          <button type="button" onClick={() => setRole(emp, "client")} disabled={savingId === emp.id} style={menuItemStyle(false)}>
+                          <button
+                            type="button"
+                            onClick={() => setRole(emp, "client")}
+                            disabled={savingId === emp.id}
+                            style={menuItemStyle(false)}
+                          >
                             Cliente
                           </button>
                         </div>
@@ -375,7 +487,14 @@ export default function Employees() {
           )}
         </div>
 
-        <div style={{ padding: 14, borderTop: "1px solid rgba(0,0,0,.08)", display: "flex", justifyContent: "flex-end" }}>
+        <div
+          style={{
+            padding: 14,
+            borderTop: "1px solid rgba(0,0,0,.08)",
+            display: "flex",
+            justifyContent: "flex-end",
+          }}
+        >
           <button className="btn ghost" type="button" onClick={load} disabled={loading}>
             Atualizar
           </button>

@@ -33,7 +33,7 @@ export default function Logout() {
   }, [navigate]);
 
   return (
-    <div style={{ padding: 24, color: "#fff" }}>
+    <div style={{ padding: 24, color: "#ffffff" }}>
       Saindo...
     </div>
   );

@@ -1042,9 +1042,6 @@ export default function Clients() {
                       <div className="chip2">
                         kWp: <b>{viewClient.ufv_potencia_kwp || "—"}</b>
                       </div>
-                      <div className="chip2">
-                        Irradiação: <b>{viewClient.ufv_irradiacao || "—"}</b>
-                      </div>
                     </div>
                   </div>
 
@@ -1315,12 +1312,6 @@ export default function Clients() {
                                 type="number"
                                 value={formData.ufv_potencia_kwp}
                                 onChange={(v) => setField("ufv_potencia_kwp", v)}
-                              />
-                              <InputField
-                                label="Irradiação (kWh/m²/dia)"
-                                type="number"
-                                value={formData.ufv_irradiacao}
-                                onChange={(v) => setField("ufv_irradiacao", v)}
                               />
 
                               <SelectField
@@ -1697,7 +1688,7 @@ export default function Clients() {
                           <b>Total por kWp (depois da divisão):</b> R$ {totalPorKwp.toFixed(2)}
                         </div>
                         <div style={{ color: "#000000" }}>
-                          <b>Total em R$ (Total por kWp × kWp):</b> R$ {totalEmReais.toFixed(2)}
+                          <b>Total em R$ (Total por kWp + kWp):</b> R$ {totalEmReais.toFixed(2)}
                         </div>
                       </div>
                     </Section>
@@ -1838,7 +1829,7 @@ export default function Clients() {
                 </div>
 
                 <div className="muted small" style={{ marginTop: 10 }}>
-                  Obs: Pagamentos calculam em cima do Total em R$ (Total por kWp × kWp).
+                  Obs: Pagamentos calculam em cima do Total em R$ (Total por kWp + kWp).
                 </div>
               </form>
             </div>
