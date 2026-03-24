@@ -1,4 +1,3 @@
-// src/pages/Plants.jsx
 import React, { useEffect, useMemo, useState } from "react";
 import { supabase } from "../lib/supabaseClient";
 import "../styles.css";
@@ -12,6 +11,7 @@ function pillForStatus(st) {
 
 export default function Plants() {
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
   const [err, setErr] = useState("");
   const [plants, setPlants] = useState([]);
   const [integrations, setIntegrations] = useState([]);
@@ -27,6 +27,7 @@ export default function Plants() {
   async function load() {
     setErr("");
     setLoading(true);
+
     const userId = await getUserId();
     if (!userId) {
       setErr("Usuário não autenticado.");
@@ -36,7 +37,7 @@ export default function Plants() {
 
     const { data: intData, error: intErr } = await supabase
       .from("integrations")
-      .select("id, provider, display_name, status")
+      .select("id, provider, display_name, name, is_active")
       .eq("user_id", userId)
       .order("display_name", { ascending: true });
 
@@ -63,14 +64,57 @@ export default function Plants() {
     setLoading(false);
   }
 
+  async function syncPlants() {
+    setErr("");
+    setSyncing(true);
+
+    try {
+      const {
+        data: { session },
+        error: sessErr,
+      } = await supabase.auth.getSession();
+
+      if (sessErr) throw sessErr;
+      if (!session?.access_token) throw new Error("Você não está logado.");
+
+      const r = await fetch(
+        "https://tzofkmjdoahmhifrblwl.supabase.co/functions/v1/sync-plants",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({}),
+        }
+      );
+
+      const json = await r.json().catch(() => ({}));
+
+      if (!r.ok) {
+        throw new Error(json?.error || `Erro HTTP ${r.status}`);
+      }
+
+      await load();
+    } catch (e) {
+      setErr(e?.message || "Erro ao sincronizar usinas");
+    } finally {
+      setSyncing(false);
+    }
+  }
+
   useEffect(() => {
     load();
   }, []);
 
   const providerOptions = useMemo(() => {
-    const set = new Map();
-    integrations.forEach((i) => set.set(i.provider, i.display_name));
-    return Array.from(set.entries()).map(([key, name]) => ({ key, name }));
+    const map = new Map();
+
+    integrations
+      .filter((i) => i?.provider)
+      .forEach((i) => map.set(i.provider, i.display_name || i.name || i.provider));
+
+    return Array.from(map.entries()).map(([key, name]) => ({ key, name }));
   }, [integrations]);
 
   const filtered = useMemo(() => {
@@ -94,16 +138,36 @@ export default function Plants() {
     <div className="page">
       <div className="pageHeaderRow">
         <div>
-          <h1 className="pageTitle">Usinas</h1>
+          <h1 className="pageTitle">Usinas TESTE 123</h1>
           <p className="pageSub">Lista de usinas conectadas via APIs cadastradas.</p>
         </div>
 
-        <button className="btn ghost" type="button" onClick={load}>
-          Recarregar
-        </button>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button
+            className="btn ghost"
+            type="button"
+            onClick={load}
+            disabled={loading || syncing}
+          >
+            Recarregar
+          </button>
+
+          <button
+            className="btn"
+            type="button"
+            onClick={syncPlants}
+            disabled={loading || syncing}
+          >
+            {syncing ? "SINCRONIZANDO..." : "BOTAO TESTE SYNC"}
+          </button>
+        </div>
       </div>
 
-      {err ? <div className="warn" style={{ marginTop: 12 }}>Erro: {err}</div> : null}
+      {err ? (
+        <div className="warn" style={{ marginTop: 12 }}>
+          Erro: {err}
+        </div>
+      ) : null}
 
       <div className="card" style={{ marginTop: 16 }}>
         <div className="filtersRow">
@@ -118,7 +182,11 @@ export default function Plants() {
 
           <div className="selectWrap">
             <label className="muted small">Provedor</label>
-            <select className="input" value={provider} onChange={(e) => setProvider(e.target.value)}>
+            <select
+              className="input"
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+            >
               <option value="all">Todos</option>
               {providerOptions.map((o) => (
                 <option key={o.key} value={o.key}>
@@ -139,12 +207,15 @@ export default function Plants() {
         </div>
 
         {loading ? (
-          <div className="muted" style={{ padding: 16 }}>Carregando usinas...</div>
+          <div className="muted" style={{ padding: 16 }}>
+            Carregando usinas...
+          </div>
         ) : filtered.length === 0 ? (
           <div className="muted" style={{ padding: 16 }}>
             Nenhuma usina encontrada.
             <div style={{ marginTop: 8 }}>
-              Vá em <b>Integrações</b> → conecte um provedor → clique <b>Sincronizar</b>.
+              Vá em <b>Integrações</b> → conecte um provedor → clique{" "}
+              <b>BOTAO TESTE SYNC</b>.
             </div>
           </div>
         ) : (
@@ -161,7 +232,6 @@ export default function Plants() {
                   <th>Provedor</th>
                 </tr>
               </thead>
-
               <tbody>
                 {filtered.map((p) => {
                   const integ = integrations.find((i) => i.id === p.integration_id);
@@ -181,7 +251,6 @@ export default function Plants() {
                       </td>
 
                       <td>{p.capacity_kwp ? `${p.capacity_kwp} kWp` : "-"}</td>
-
                       <td>{prM ? `${(prM * 100).toFixed(1)}%` : "-"}</td>
                       <td>{prY ? `${(prY * 100).toFixed(1)}%` : "-"}</td>
 
@@ -191,7 +260,7 @@ export default function Plants() {
                         </span>
                       </td>
 
-                      <td>{integ?.display_name || "-"}</td>
+                      <td>{integ?.display_name || integ?.name || integ?.provider || "-"}</td>
                     </tr>
                   );
                 })}
@@ -201,7 +270,7 @@ export default function Plants() {
         )}
 
         <div className="tableFooter muted small">
-          Dica: o “Sincronizar” por enquanto cria usinas dummy (MVP). Depois a gente pluga API real.
+          Dica: clique em “BOTAO TESTE SYNC” para buscar as usinas no provedor e salvar no sistema.
         </div>
       </div>
     </div>

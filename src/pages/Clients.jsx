@@ -191,6 +191,36 @@ async function uploadRateioDocs({ clientId, rateioId, files }) {
 }
 
 /**
+ * ✅ Upload docs do CLIENTE (aba Básico)
+ * bucket: client-docs
+ * path: clients/<clientId>/<timestamp>-rand.ext
+ * retorna array de URLs públicas
+ */
+async function uploadClientDocs({ clientId, files }) {
+  const list = Array.isArray(files) ? files : [];
+  if (!clientId || list.length === 0) return [];
+
+  const uploaded = [];
+
+  for (const file of list) {
+    const ext = (file?.name || "").split(".").pop() || "bin";
+    const path = `clients/${clientId}/${Date.now()}-${Math.random()
+      .toString(16)
+      .slice(2)}.${ext}`;
+
+    const { error: upErr } = await supabase.storage
+      .from("client-docs")
+      .upload(path, file, { upsert: false });
+    if (upErr) throw upErr;
+
+    const { data } = supabase.storage.from("client-docs").getPublicUrl(path);
+    uploaded.push(data.publicUrl);
+  }
+
+  return uploaded;
+}
+
+/**
  * ✅ Pagamento item:
  * - forma, pct, data (YYYY-MM-DD)
  */
@@ -292,6 +322,11 @@ function normalizeClient(c) {
 
     // ✅ pagamentos com data
     financeiro_pagamentos: pagamentos,
+
+    // ✅ docs do cliente
+    client_docs: normalizeJsonArray(safe.client_docs, []),
+    client_docs_files: [],
+    client_docs_previews: [],
   };
 }
 
@@ -316,7 +351,6 @@ function getEconomiaCliente(c) {
     return sum + (Number(it?.valor) || 0);
   }, 0);
 
-  // total em reais
   return totalCustos;
 }
 
@@ -593,10 +627,15 @@ export default function Clients() {
 
   const hasCategory = categories.length > 0;
 
-  // ✅ payload limpo (sem id e sem docs_files/docs_previews)
-  // ✅ salva service_category (compat) como a 1ª categoria
+  // ✅ payload limpo (não manda campos locais de upload)
   const buildPayloadForDb = (fd) => {
-    const { id: _ignoreId, ...rest } = fd || {};
+    const {
+      id: _ignoreId,
+      client_docs_files: _cdf,
+      client_docs_previews: _cdp,
+      ...rest
+    } = fd || {};
+
     const cats = normalizeCategories(fd.service_categories);
 
     const pay = Array.isArray(fd.financeiro_pagamentos)
@@ -606,10 +645,15 @@ export default function Clients() {
     return {
       ...rest,
       service_categories: cats,
-      service_category: cats[0] || "", // ✅ compat com a coluna antiga
+      service_category: cats[0] || "",
       ufv_consumo_mensal: normalizeConsumoMensal(fd.ufv_consumo_mensal),
       financeiro_custos: Array.isArray(fd.financeiro_custos) ? fd.financeiro_custos : [],
       financeiro_pagamentos: pay,
+
+      // ✅ salva urls do cliente
+      client_docs: Array.isArray(fd.client_docs) ? fd.client_docs : [],
+
+      // ✅ rateios limpos
       ufv_rateios:
         fd.ufv_rateio === "SIM"
           ? (Array.isArray(fd.ufv_rateios) ? fd.ufv_rateios : []).map(
@@ -626,10 +670,7 @@ export default function Clients() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!pctOk) {
-      alert("As porcentagens precisam fechar em 100%.");
-      return;
-    }
+    // ✅ sem trava de %
 
     setErrMsg("");
 
@@ -662,6 +703,36 @@ export default function Clients() {
         clientId = inserted?.id;
       }
 
+      // ✅ upload docs do CLIENTE
+      if (clientId && Array.isArray(formData.client_docs_files) && formData.client_docs_files.length > 0) {
+        const newUrls = await uploadClientDocs({
+          clientId,
+          files: formData.client_docs_files,
+        });
+
+        const merged = [
+          ...(Array.isArray(formData.client_docs) ? formData.client_docs : []),
+          ...newUrls,
+        ];
+
+        const { error: upClientDocsErr } = await supabase
+          .from("clients")
+          .update({ client_docs: merged })
+          .eq("id", clientId);
+        if (upClientDocsErr) throw upClientDocsErr;
+
+        (formData.client_docs_previews || []).forEach((u) => {
+          try { URL.revokeObjectURL(u); } catch {}
+        });
+
+        setFormData((p) => ({
+          ...p,
+          client_docs: merged,
+          client_docs_files: [],
+          client_docs_previews: [],
+        }));
+      }
+
       // ✅ upload docs de cada rateio (se SIM)
       if (clientId && formData.ufv_rateio === "SIM") {
         const rateios = Array.isArray(formData.ufv_rateios) ? formData.ufv_rateios : [];
@@ -681,22 +752,16 @@ export default function Clients() {
 
             rr.docs = [...(Array.isArray(rr.docs) ? rr.docs : []), ...newUrls];
 
-            // ✅ limpa previews pra não vazar memória
             (rr.docs_previews || []).forEach((u) => {
-              try {
-                URL.revokeObjectURL(u);
-              } catch {}
+              try { URL.revokeObjectURL(u); } catch {}
             });
 
             rr.docs_files = [];
             rr.docs_previews = [];
             changed = true;
           } else {
-            // ✅ também limpa previews se existirem
             (rr.docs_previews || []).forEach((u) => {
-              try {
-                URL.revokeObjectURL(u);
-              } catch {}
+              try { URL.revokeObjectURL(u); } catch {}
             });
             rr.docs_files = [];
             rr.docs_previews = [];
@@ -705,7 +770,6 @@ export default function Clients() {
           nextRateios.push(rr);
         }
 
-        // se teve upload, atualiza a coluna ufv_rateios
         if (changed) {
           const toDb = nextRateios.map(({ docs_files, docs_previews, ...r }) => ({
             ...r,
@@ -787,7 +851,6 @@ export default function Clients() {
             <button className="btn primary" type="button" onClick={openNew}>
               + Novo Cliente
             </button>
-            {/* <button className="btn ghost" type="button" onClick={handleLogout}>Sair</button> */}
           </div>
         </div>
 
@@ -849,7 +912,6 @@ export default function Clients() {
                   const total = getEconomiaCliente(c);
                   const consumo = getConsumoMedioCliente(c);
 
-                  // ✅ normaliza de verdade (array/json/string/csv)
                   const cats = normalizeCategories(c.service_categories ?? c.service_category ?? "");
 
                   return (
@@ -864,7 +926,6 @@ export default function Clients() {
                           </div>
                         </div>
 
-                        {/* ✅ lado direito: badge + 3 pontinhos */}
                         <div style={{ display: "flex", alignItems: "center", gap: 10, position: "relative" }}>
                           <span className={`badge2 badge-${statusKey}`}>
                             {statusKey === "entrada" ? "Em Andamento" : statusKey}
@@ -954,10 +1015,7 @@ export default function Clients() {
                         <div className="clientTotal2">{total ? formatBRL(total) : "—"}</div>
                       </div>
 
-                      {/* ✅ MANTIVE seus botões (não apaguei) */}
-                      <div className="clientActions2">
-          
-                      </div>
+                      <div className="clientActions2"></div>
                     </div>
                   );
                 })}
@@ -970,16 +1028,10 @@ export default function Clients() {
           </div>
         </div>
 
-        {/* ✅ MODAL: VISUALIZAR CLIENTE (somente leitura) */}
+        {/* ✅ MODAL: VISUALIZAR CLIENTE */}
         {viewOpen && viewClient && (
-          <div
-            style={{ ...modalOverlay, zIndex: 100000 }}
-            onClick={() => closeView()}
-          >
-            <div
-              style={modalCard}
-              onClick={(e) => e.stopPropagation()}
-            >
+          <div style={{ ...modalOverlay, zIndex: 100000 }} onClick={() => closeView()}>
+            <div style={modalCard} onClick={(e) => e.stopPropagation()}>
               <div className="panel" style={{ padding: 18 }}>
                 <div className="pageHeader" style={{ marginBottom: 8 }}>
                   <div>
@@ -1020,9 +1072,7 @@ export default function Clients() {
                   <div className="full">
                     <InputFieldReadOnly
                       label="Categorias"
-                      value={normalizeCategories(viewClient.service_categories ?? viewClient.service_category ?? "").join(
-                        ", "
-                      )}
+                      value={normalizeCategories(viewClient.service_categories ?? viewClient.service_category ?? "").join(", ")}
                     />
                   </div>
 
@@ -1034,10 +1084,15 @@ export default function Clients() {
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                       <div className="chip2">
                         Consumo Médio:{" "}
-                        <b>{getConsumoMedioCliente(viewClient) ? `${getConsumoMedioCliente(viewClient).toFixed(0)} kWh` : "—"}</b>
+                        <b>
+                          {getConsumoMedioCliente(viewClient)
+                            ? `${getConsumoMedioCliente(viewClient).toFixed(0)} kWh`
+                            : "—"}
+                        </b>
                       </div>
                       <div className="chip2">
-                        Total: <b>{getEconomiaCliente(viewClient) ? formatBRL(getEconomiaCliente(viewClient)) : "—"}</b>
+                        Total:{" "}
+                        <b>{getEconomiaCliente(viewClient) ? formatBRL(getEconomiaCliente(viewClient)) : "—"}</b>
                       </div>
                       <div className="chip2">
                         kWp: <b>{viewClient.ufv_potencia_kwp || "—"}</b>
@@ -1045,14 +1100,23 @@ export default function Clients() {
                     </div>
                   </div>
 
-                  {/* Se quiser, dá pra mostrar rateios/docs aqui também depois */}
+                  <div className="full">
+                    <div style={{ fontWeight: 900, marginBottom: 6 }}>Documentos do Cliente</div>
+                    <PreviewGrid
+                      items={(viewClient.client_docs || []).map((url, i3) => ({
+                        src: url,
+                        name: `Documento ${i3 + 1}`,
+                        kind: isImageUrl(url) ? "image" : isPdfUrl(url) ? "pdf" : "link",
+                      }))}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* ✅ SEU MODAL ORIGINAL (não mexi na lógica dele) */}
+        {/* ✅ MODAL FORM */}
         {isFormOpen && (
           <div style={modalOverlay}>
             <div style={modalCard}>
@@ -1063,7 +1127,6 @@ export default function Clients() {
                   if (e.key === "Enter") e.preventDefault();
                 }}
               >
-                {/* --- SEU FORM INTEIRO CONTINUA IGUAL DAQUI PRA BAIXO --- */}
                 <div className="pageHeader" style={{ marginBottom: 8 }}>
                   <div>
                     <h2 className="title" style={{ fontSize: 20, margin: 0 }}>
@@ -1122,7 +1185,6 @@ export default function Clients() {
                   )}
                 </div>
 
-                {/* --- DAQUI EM DIANTE É 100% O SEU FORM COMO VOCÊ MANDOU --- */}
                 {activeTab === "basico" && (
                   <div className="grid2">
                     <SelectField
@@ -1137,22 +1199,10 @@ export default function Clients() {
                     />
                     <div />
 
-                    <InputField
-                      label="Nome / Razão Social"
-                      value={formData.name}
-                      onChange={(v) => setField("name", v)}
-                    />
-                    <InputField
-                      label="CPF / CNPJ"
-                      value={formData.document}
-                      onChange={(v) => setField("document", v)}
-                    />
+                    <InputField label="Nome / Razão Social" value={formData.name} onChange={(v) => setField("name", v)} />
+                    <InputField label="CPF / CNPJ" value={formData.document} onChange={(v) => setField("document", v)} />
 
-                    <InputField
-                      label="E-mail"
-                      value={formData.email}
-                      onChange={(v) => setField("email", v)}
-                    />
+                    <InputField label="E-mail" value={formData.email} onChange={(v) => setField("email", v)} />
                     <InputField
                       label="Telefone"
                       value={formData.contact_number}
@@ -1200,7 +1250,55 @@ export default function Clients() {
                       />
                     </div>
 
-                    {/* ✅ MULTI CATEGORIAS (com botão ADD + remover) */}
+                    {/* ✅ Documentos do Cliente */}
+                    <div className="full">
+                      <label className="label">Documentos do Cliente (fotos/PDF)</label>
+                      <input
+                        className="input"
+                        type="file"
+                        accept="image/*,application/pdf"
+                        multiple
+                        onChange={(e) => {
+                          const files = Array.from(e.target.files || []);
+
+                          setFormData((p) => {
+                            (p.client_docs_previews || []).forEach((u) => {
+                              try { URL.revokeObjectURL(u); } catch {}
+                            });
+
+                            const previews = files.map((f) => URL.createObjectURL(f));
+
+                            return {
+                              ...p,
+                              client_docs_files: files,
+                              client_docs_previews: previews,
+                            };
+                          });
+                        }}
+                      />
+
+                      <PreviewGrid
+                        items={(formData.client_docs_files || []).map((f, i2) => ({
+                          src: (formData.client_docs_previews || [])[i2],
+                          name: f?.name || `Arquivo ${i2 + 1}`,
+                          kind: String(f?.type || "").startsWith("image/")
+                            ? "image"
+                            : String(f?.type || "") === "application/pdf"
+                            ? "pdf"
+                            : "link",
+                        }))}
+                      />
+
+                      <PreviewGrid
+                        items={(formData.client_docs || []).map((url, i3) => ({
+                          src: url,
+                          name: `Documento ${i3 + 1}`,
+                          kind: isImageUrl(url) ? "image" : isPdfUrl(url) ? "pdf" : "link",
+                        }))}
+                      />
+                    </div>
+
+                    {/* ✅ MULTI CATEGORIAS */}
                     <div className="full">
                       <label className="label">Categoria(s) de Serviço</label>
 
@@ -1267,35 +1365,14 @@ export default function Clients() {
                         fetchAddressByCep(v);
                       }}
                     />
-                    <InputField
-                      label="Endereço"
-                      value={formData.address}
-                      onChange={(v) => setField("address", v)}
-                    />
-                    <InputField
-                      label="Número"
-                      value={formData.house_number}
-                      onChange={(v) => setField("house_number", v)}
-                    />
-                    <InputField
-                      label="Bairro"
-                      value={formData.neighborhood}
-                      onChange={(v) => setField("neighborhood", v)}
-                    />
-                    <InputField
-                      label="Cidade"
-                      value={formData.city}
-                      onChange={(v) => setField("city", v)}
-                    />
-                    <InputField
-                      label="Estado"
-                      value={formData.state}
-                      onChange={(v) => setField("state", v)}
-                    />
+                    <InputField label="Endereço" value={formData.address} onChange={(v) => setField("address", v)} />
+                    <InputField label="Número" value={formData.house_number} onChange={(v) => setField("house_number", v)} />
+                    <InputField label="Bairro" value={formData.neighborhood} onChange={(v) => setField("neighborhood", v)} />
+                    <InputField label="Cidade" value={formData.city} onChange={(v) => setField("city", v)} />
+                    <InputField label="Estado" value={formData.state} onChange={(v) => setField("state", v)} />
                   </div>
                 )}
 
-                {/* ✅ NICHOS: abre seção pra TODA categoria selecionada */}
                 {activeTab === "nicho" && (
                   <div className="grid2">
                     {categories.length === 0 ? (
@@ -1335,12 +1412,9 @@ export default function Clients() {
                                 onChange={(v) => {
                                   setField("ufv_rateio", v);
                                   if (v !== "SIM") {
-                                    // ✅ revoga previews se fechar
                                     (formData.ufv_rateios || []).forEach((ri) => {
                                       (ri.docs_previews || []).forEach((u) => {
-                                        try {
-                                          URL.revokeObjectURL(u);
-                                        } catch {}
+                                        try { URL.revokeObjectURL(u); } catch {}
                                       });
                                     });
 
@@ -1348,9 +1422,7 @@ export default function Clients() {
                                   } else {
                                     setFormData((p) => ({
                                       ...p,
-                                      ufv_rateios: (p.ufv_rateios || []).length
-                                        ? p.ufv_rateios
-                                        : [newRateioItem()],
+                                      ufv_rateios: (p.ufv_rateios || []).length ? p.ufv_rateios : [newRateioItem()],
                                     }));
                                   }
                                 }}
@@ -1360,7 +1432,6 @@ export default function Clients() {
                                 ]}
                               />
 
-                              {/* ✅ MULTI RATEIOS (com botão ADD) */}
                               {formData.ufv_rateio === "SIM" && (
                                 <div className="full" style={{ marginTop: 10 }}>
                                   <div className="section">
@@ -1394,9 +1465,7 @@ export default function Clients() {
                                               onClick={() =>
                                                 setFormData((p) => ({
                                                   ...p,
-                                                  ufv_rateios: (p.ufv_rateios || []).filter(
-                                                    (x) => x.id !== r.id
-                                                  ),
+                                                  ufv_rateios: (p.ufv_rateios || []).filter((x) => x.id !== r.id),
                                                 }))
                                               }
                                             >
@@ -1472,11 +1541,8 @@ export default function Clients() {
                                                     ufv_rateios: (p.ufv_rateios || []).map((x) => {
                                                       if (x.id !== r.id) return x;
 
-                                                      // ✅ revoga previews antigos
                                                       (x.docs_previews || []).forEach((u) => {
-                                                        try {
-                                                          URL.revokeObjectURL(u);
-                                                        } catch {}
+                                                        try { URL.revokeObjectURL(u); } catch {}
                                                       });
 
                                                       const previews = files.map((f) => URL.createObjectURL(f));
@@ -1491,7 +1557,6 @@ export default function Clients() {
                                                 }}
                                               />
 
-                                              {/* ✅ previews locais (antes de salvar) */}
                                               <PreviewGrid
                                                 items={(r.docs_files || []).map((f, i2) => ({
                                                   src: (r.docs_previews || [])[i2],
@@ -1504,7 +1569,6 @@ export default function Clients() {
                                                 }))}
                                               />
 
-                                              {/* ✅ docs já salvos (urls) */}
                                               <PreviewGrid
                                                 items={(r.docs || []).map((url, i3) => ({
                                                   src: url,
@@ -1583,19 +1647,12 @@ export default function Clients() {
 
                               <ReadOnlyField label="Consumo Anual (kWh)" value={String(consumoAnual)} />
                               <ReadOnlyField label="Média Mensal (kWh)" value={String(consumoMedio)} />
-                              <ReadOnlyField
-                                label="Geração Mensal Estimada (kWh)"
-                                value={String(geracaoMensal.toFixed(2))}
-                              />
-                              <ReadOnlyField
-                                label="Geração Anual Estimada (kWh)"
-                                value={String(geracaoAnual.toFixed(2))}
-                              />
+                              <ReadOnlyField label="Geração Mensal Estimada (kWh)" value={String(geracaoMensal.toFixed(2))} />
+                              <ReadOnlyField label="Geração Anual Estimada (kWh)" value={String(geracaoAnual.toFixed(2))} />
                             </React.Fragment>
                           );
                         }
 
-                        // ✅ outros nichos (placeholder, mas ABRE)
                         return (
                           <div key={cat} className="full">
                             <Section title={`Nicho: ${cat}`}>
@@ -1796,17 +1853,14 @@ export default function Clients() {
                         onClick={() =>
                           setFormData((p) => ({
                             ...p,
-                            financeiro_pagamentos: [
-                              ...pagamentos,
-                              { id: uid(), forma: "PIX", pct: 0, data: "" },
-                            ],
+                            financeiro_pagamentos: [...pagamentos, { id: uid(), forma: "PIX", pct: 0, data: "" }],
                           }))
                         }
                       >
                         + Adicionar forma
                       </button>
 
-                      {!pctOk && <div className="warn">As porcentagens precisam fechar em 100%.</div>}
+                      {!pctOk && <div className="warn">As porcentagens não fecham em 100%.</div>}
                     </Section>
                   </div>
                 )}
@@ -1823,7 +1877,7 @@ export default function Clients() {
                     Cancelar
                   </button>
 
-                  <button className="btn primary" type="submit" disabled={!pctOk}>
+                  <button className="btn primary" type="submit">
                     Salvar Cliente
                   </button>
                 </div>
@@ -1870,7 +1924,6 @@ function ReadOnlyField({ label, value }) {
   );
 }
 
-// ✅ usado no modal visualizar (mesma cara do input, só que readOnly e sem mexer no teu InputField original)
 function InputFieldReadOnly({ label, value, type = "text" }) {
   return (
     <div>
@@ -1896,7 +1949,6 @@ function SelectField({ label, value, onChange, options }) {
   );
 }
 
-/** ✅ SectionTitle forçado preto */
 function Section({ title, children }) {
   return (
     <div className="section">
@@ -1908,26 +1960,24 @@ function Section({ title, children }) {
   );
 }
 
-/** ✅ Modal maior (pra caber o Valor) */
 const modalOverlay = {
   position: "fixed",
   inset: 0,
   background: "rgba(0,0,0,.45)",
   display: "flex",
-  alignItems: "center", // ✅ antes era flex-start
+  alignItems: "center",
   justifyContent: "center",
   padding: 24,
   zIndex: 9999,
 };
 
 const modalCard = {
-  width: "min(1400px, 95%)", // ✅ antes era 1100px
-  maxHeight: "95vh", // ✅ antes era calc(100vh - 48px)
+  width: "min(1400px, 95%)",
+  maxHeight: "95vh",
   overflow: "auto",
   background: "transparent",
 };
 
-// ✅ estilo do menu dropdown
 function dropdownItem(isDanger) {
   return {
     width: "100%",
